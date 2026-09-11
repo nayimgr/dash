@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="theme-color" content="#F7F6F3" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#141412" media="(prefers-color-scheme: dark)">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="b">
+<meta name="robots" content="noindex, nofollow">
+<title>b</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='20' fill='%2316A34A'/><text y='70' x='50' text-anchor='middle' font-size='56' font-family='sans-serif' font-weight='600' fill='white'>b</text></svg>">
+<link rel="stylesheet" href="../shared/style.css?v=20260911-2029">
+</head>
+<body>
+<div id="app"></div>
+<div class="overlay" id="overlay"><div class="modal" id="modal"></div></div>
+
+<script src="../shared/core.js?v=20260911-2029"></script>
+<script>
+// Structure only — see the note in the sibling dashboard.
+
+DashCore.start({
+  id:          "b",
+  title:       "b",
+  briefPath:   "brief/today.json",
+  changesPath: "brief/today_changes.json",
+  dateField:   { default:"Do on", person:"Next contact" },
+
+  blocks: [
+    { kind:"session",   id:"session",  label:"Today" },
+    { kind:"scales",    id:"scales",   label:"Daily readings" },
+    { kind:"metrics",   id:"metrics",  label:"Benchmarks" },
+    { kind:"items",     id:"tasks",    label:"Tasks", allowNew:true },
+    { kind:"projects",  id:"goals",    label:"Goals" },
+    { kind:"recent",    id:"recent",   label:"Recent", limit:20 },
+    { kind:"braindump", id:"notes",    label:"Notes" }
+  ]
+});
+</script>
+</body>
+</html>
