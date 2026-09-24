@@ -44,7 +44,7 @@
 window.DashCore = (function(){
 
 const API   = "https://api.github.com";
-const BUILD = "20260911-2120";
+const BUILD = "20260924-2200";
 
 let M        = null;     // manifest
 let REPO     = "";
@@ -66,6 +66,9 @@ let COLL     = {};
 let WDISM    = {};
 let subForms = {};
 let watchT   = [];       // timers polling for the Action's applied marks
+let FDRAFT   = {};       // log-form drafts, in memory: {formId: {fieldId: value}}
+let upState  = {};       // upload status per upload id
+let FORMSEL  = null;     // which log form is open
 
 // ── dates, in local time ─────────────────────────────────────────────────────
 // Never toISOString(): that is UTC, and Madrid is UTC+1/+2. Using it makes the
@@ -152,7 +155,8 @@ function txt(key, dflt){
 }
 function uid(p){ return p + "-" + Date.now().toString(36) + "-" + Math.random().toString(36).slice(2,7); }
 function emptyJournal(date){
-  return {date:date, updated:null, changes:{}, created:[], braindump:[], inbox:{}, reading:{}, readings:{}};
+  return {date:date, updated:null, changes:{}, created:[], braindump:[], inbox:{}, reading:{}, readings:{},
+          entries:[], checks:{}};
 }
 // How many days ago, in whole local days. Used to age the "recent" block.
 function daysAgo(d){
@@ -170,7 +174,7 @@ function relDay(d){
 }
 
 // ── local layer ──────────────────────────────────────────────────────────────
-function emptyLocal(){ return {ch:{}, nt:[], rm:[], bd:[], bdrm:[], ib:{}, pp:{}, rd:{}}; }
+function emptyLocal(){ return {ch:{}, nt:[], rm:[], bd:[], bdrm:[], ib:{}, pp:{}, rd:{}, en:[], enrm:[], ck:{}}; }
 function localKey(){ return K("local:" + (BRIEF ? BRIEF.date : "none")); }
 function loadLocal(){
   try{ S = JSON.parse(ls(localKey())) || {}; }catch(e){ S = {}; }
@@ -262,7 +266,8 @@ function localCount(){
     });
   });
   n += Object.keys(S.rd).length;
-  return n + S.nt.length + S.rm.length + S.bd.length + S.bdrm.length;
+  Object.keys(S.ck).forEach(function(id){ if(S.ck[id] !== baseCheck(id)) n++; });
+  return n + S.nt.length + S.rm.length + S.bd.length + S.bdrm.length + S.en.length + S.enrm.length;
 }
 // In the journal, written but not yet applied to the issues by the Action.
 function queuedCount(){
@@ -275,6 +280,8 @@ function queuedCount(){
   });
   n += J.created.length   - J.created.filter(isApplied).length;
   n += J.braindump.length - J.braindump.filter(isApplied).length;
+  n += J.entries.length   - J.entries.filter(isApplied).length;
+  Object.keys(J.checks).forEach(function(id){ if(!isApplied(J.checks[id])) n++; });
   ["inbox","reading"].forEach(function(bag){
     Object.keys(J[bag]||{}).forEach(function(id){ if(!isApplied(J[bag][id])) n++; });
   });
@@ -287,6 +294,8 @@ function appliedCount(){
   Object.keys(J.changes).forEach(k => { if(isApplied(J.changes[k])) n++; });
   n += J.created.filter(isApplied).length;
   n += J.braindump.filter(isApplied).length;
+  n += J.entries.filter(isApplied).length;
+  Object.keys(J.checks).forEach(function(id){ if(isApplied(J.checks[id])) n++; });
   ["inbox","reading"].forEach(function(bag){
     Object.keys(J[bag]||{}).forEach(function(id){ if(isApplied(J[bag][id])) n++; });
   });
@@ -368,6 +377,7 @@ async function fetchJournal(){
     p.braindump = p.braindump || {}; p.inbox = p.inbox || {};
     p.braindump = Array.isArray(p.braindump) ? p.braindump : [];
     p.reading = p.reading || {}; p.readings = p.readings || {};
+    p.entries = Array.isArray(p.entries) ? p.entries : []; p.checks = p.checks || {};
     // A journal left over from an earlier day is not ours — start clean.
     J = (p.date === BRIEF.date) ? p : emptyJournal(BRIEF.date);
   }catch(e){
@@ -437,6 +447,16 @@ function mergeLocalInto(j){
     });
   });
   j.readings = Object.assign({}, j.readings||{}, S.rd);
+
+  j.entries = (j.entries||[]).filter(e => S.enrm.indexOf(e.id) === -1 || isApplied(e));
+  S.en.forEach(function(e){ if(!j.entries.some(x => x.id === e.id)) j.entries.push(e); });
+  j.checks = j.checks || {};
+  Object.keys(S.ck).forEach(function(id){
+    const prev = j.checks[id];
+    if(prev && !!prev.done === S.ck[id] && prev.date === TODAY) return;
+    // A fresh entry beside an applied one is how an applied tick is undone.
+    j.checks[id] = {done:S.ck[id], date:TODAY, ts:localStamp()};
+  });
   j.date = BRIEF.date;
   j.updated = localStamp();
   return j;
@@ -479,8 +499,28 @@ function watchForApply(){
       try{
         const before = appliedCount();
         await fetchJournal();
-        if(appliedCount() !== before) render();
+        if(appliedCount() !== before){
+          if(await briefChanged()) loadBrief(); else render();
+        }
       }catch(e){ /* a failed poll is not worth surfacing */ }
+    }, ms));
+  });
+}
+
+// The brief is rebuilt by a workflow whenever the data under it changes, so a
+// save or an upload is followed, a minute later, by a new brief.
+async function briefChanged(){
+  try{
+    const f = await api("/repos/"+REPO+"/contents/"+M.briefPath+"?ref=HEAD&t="+Date.now());
+    const b = JSON.parse(b64utf8(f.content));
+    return !!BRIEF && (b.generated !== BRIEF.generated || b.date !== BRIEF.date);
+  }catch(e){ return false; }
+}
+function watchBrief(){
+  [30000, 60000, 100000, 160000].forEach(function(ms){
+    watchT.push(setTimeout(async function(){
+      if(view !== "ready" || saving) return;
+      if(await briefChanged()) loadBrief();
     }, ms));
   });
 }
@@ -659,6 +699,123 @@ function setReading(id, v){
 function effReading(id){
   if(S.rd[id] !== undefined) return S.rd[id];
   return (J && J.readings) ? J.readings[id] : undefined;
+}
+
+// ── daily checks: done today or not ──────────────────────────────────────────
+// The brief says what the files already hold for today (`done`); the journal
+// and the local layer say what has been ticked since. Keyed by the LOCAL date,
+// so a stale brief never files a tick under yesterday.
+function checkItems(){ return (BRIEF && BRIEF.checks) || []; }
+function baseCheck(id){
+  const j = J && J.checks ? J.checks[id] : null;
+  if(j && j.date === TODAY) return !!j.done;
+  const b = checkItems().find(c => String(c.id) === String(id));
+  return !!(b && b.done && BRIEF.date === TODAY);
+}
+function effCheck(id){ return (id in S.ck) ? S.ck[id] : baseCheck(id); }
+function toggleCheck(id){
+  const v = !effCheck(id);
+  if(v === baseCheck(id)) delete S.ck[id]; else S.ck[id] = v;
+  saveLocal(); render();
+}
+
+// ── log forms: structured entries, defined entirely by the brief ─────────────
+function formDefs(){ return (BRIEF && BRIEF.forms) || []; }
+function formDef(fid){ return formDefs().find(f => f.id === fid); }
+function draft(fid){
+  if(!FDRAFT[fid]){
+    const f = formDef(fid) || {fields:[]}, d = {};
+    (f.fields||[]).forEach(function(x){ if(x.default !== undefined) d[x.id] = x.default; });
+    FDRAFT[fid] = d;
+  }
+  return FDRAFT[fid];
+}
+// Pull whatever has been typed into the draft, so a re-render keeps it.
+function readForm(fid){
+  const f = formDef(fid); if(!f) return;
+  const d = draft(fid);
+  (f.fields||[]).forEach(function(x){
+    // Button choices live in the draft already; a long list is a <select>.
+    const el = document.getElementById("ff-"+fid+"-"+x.id);
+    if(el) d[x.id] = el.value;
+  });
+}
+function pickChoice(fid, field, val){
+  readForm(fid);
+  const d = draft(fid);
+  d[field] = (d[field] === val) ? "" : val;
+  render();
+}
+function addEntry(fid){
+  readForm(fid);
+  const f = formDef(fid), d = draft(fid), values = {};
+  let missing = [];
+  (f.fields||[]).forEach(function(x){
+    const v = (d[x.id] === undefined || d[x.id] === null) ? "" : String(d[x.id]).trim();
+    if(x.type === "date") return;
+    if(v) values[x.id] = (x.type === "number") ? Number(v) : v;
+    else if(x.required) missing.push(x.label || x.id);
+  });
+  const el = document.getElementById("ff-err-"+fid);
+  if(missing.length){ if(el) el.textContent = "Missing: " + missing.join(", "); return; }
+  const df = (f.fields||[]).find(x => x.type === "date");
+  const date = (df && d[df.id]) || TODAY;
+  S.en.push({id:uid("e"), form:fid, date:date, ts:localStamp(), values:values});
+  // Keep the choices (the next entry is usually the same kind, same place);
+  // clear what is typed per entry.
+  (f.fields||[]).forEach(function(x){
+    if(x.type === "date") return;
+    if(x.type === "choice"){ if(x.keep === false) d[x.id] = (x.default !== undefined) ? x.default : ""; }
+    else if(!x.keep) d[x.id] = "";
+  });
+  saveLocal(); render();
+}
+function rmEntry(id){
+  const i = S.en.findIndex(e => e.id === id);
+  if(i >= 0) S.en.splice(i,1);
+  else if(S.enrm.indexOf(id) === -1) S.enrm.push(id);
+  saveLocal(); render();
+}
+function effEntries(fid){
+  const fromJ = (J ? J.entries : []).filter(e => e.form === fid && S.enrm.indexOf(e.id) === -1)
+                                    .map(e => Object.assign({}, e, {queued:true}));
+  const fromL = S.en.filter(e => e.form === fid).map(e => Object.assign({}, e, {queued:false}));
+  return fromJ.concat(fromL).sort((a,b) => String(b.ts).localeCompare(String(a.ts)));
+}
+function entryText(f, e){
+  return (f.fields||[]).filter(x => x.type !== "date" && e.values[x.id] !== undefined && e.values[x.id] !== "")
+    .map(x => String(e.values[x.id]) + (x.unit ? " " + x.unit : "")).join(" · ");
+}
+
+// ── uploads: a file straight into the data repository ────────────────────────
+// Not a journal entry: it is a whole new file with one writer, and the brief
+// is rebuilt from it by the workflow a minute later.
+function uploadDefs(){ return (BRIEF && BRIEF.uploads) || []; }
+async function doUpload(uid_){
+  const u = uploadDefs().find(x => x.id === uid_); if(!u) return;
+  const inp = document.getElementById("up-"+uid_);
+  const file = inp && inp.files && inp.files[0];
+  if(!file){ upState[uid_] = {err:"Choose a file first."}; render(); return; }
+  upState[uid_] = {busy:true}; render();
+  try{
+    const text = await file.text();
+    if(u.json){
+      let obj;
+      try{ obj = JSON.parse(text); }catch(e){ throw new Error("Not valid JSON."); }
+      (u.requireKeys||[]).forEach(function(k){ if(!(k in obj)) throw new Error("Missing key: " + k); });
+    }
+    const path = String(u.path).replace("{date}", TODAY);
+    let sha = null;
+    try{ sha = (await api("/repos/"+REPO+"/contents/"+path+"?ref=HEAD&t="+Date.now())).sha; }
+    catch(e){ if(String(e.message).indexOf("404") !== 0) throw e; }
+    const body = {message: M.id + ": upload " + path, content: utf8b64(text)};
+    if(sha) body.sha = sha;
+    await api("/repos/"+REPO+"/contents/"+path, "PUT", body);
+    upState[uid_] = {ok:path};
+    watchT.forEach(clearTimeout); watchT = [];
+    watchBrief();
+  }catch(e){ upState[uid_] = {err: e.message || String(e)}; }
+  render();
 }
 
 // ── issue panels ─────────────────────────────────────────────────────────────
@@ -954,14 +1111,17 @@ function recentBlock(rows){
 // ── session, metrics, and a daily scale ──────────────────────────────────────
 function sessionBlock(s){
   if(!s) return "<div class='rc-empty'>No session planned for today.</div>";
-  return "<div class='ses'>"
+  return "<div class='ses"+(s.kind?" k-"+esc(s.kind):"")+"'>"
     + "<div class='ses-t'>"+esc(s.title)+"</div>"
     + "<div class='ses-sub'>"+esc([s.when, s.duration, s.where].filter(Boolean).join(" · "))+"</div>"
     + (s.note?"<div class='cnote'>"+esc(s.note)+"</div>":"")
     + (s.exercises||[]).map(function(e){
-        return "<div class='ex'><span class='ex-n'>"+esc(e.name)+"</span>"
+        return "<div class='ex'><div class='ex-top'><span class='ex-n'>"+esc(e.name)+"</span>"
           + (e.prescription?"<span class='ex-p'>"+esc(e.prescription)+"</span>":"")
-          + (e.last?"<span class='ex-last'>last "+esc(e.last)+"</span>":"")
+          + "</div>"
+          + (e.last?"<div class='ex-last'>"+esc(e.lastLabel===undefined?"last ":e.lastLabel)+esc(e.last)+"</div>":"")
+          + (e.why?"<div class='ex-why'>"+esc(e.why)+"</div>":"")
+          + (e.flag?"<div class='ex-flag'>"+IC.warn+"<span>"+esc(e.flag)+"</span></div>":"")
           + "</div>";
       }).join("")
     + "</div>";
@@ -986,6 +1146,91 @@ function scaleBlock(sc){
     + (cur!==undefined?"<span class='pj-stage'>logged</span>":"")+"</div>"
     + (sc.note?"<div class='pj-quiet'>"+esc(sc.note)+"</div>":"")
     + "<div class='scale'>"+btns+"</div></div>";
+}
+
+function checksBlock(list){
+  return "<div class='pj'>" + list.map(function(c){
+    const on = effCheck(c.id), l = (c.id in S.ck);
+    const j = J && J.checks ? J.checks[c.id] : null;
+    const st = l ? "<span class='chip unsaved'>unsaved</span>"
+             : (j && j.date === TODAY) ? (isApplied(j) ? "<span class='chip applied'>applied</span>" : "<span class='chip queued'>queued</span>")
+             : "";
+    return "<div class='ck"+(on?" on":"")+"' onclick='DashCore.toggleCheck(\""+esc(c.id)+"\")'>"
+      + "<span class='ck-box'>"+(on?IC.check:"")+"</span>"
+      + "<div class='ck-t'><div class='ck-l'>"+esc(c.label)+" "+st+"</div>"
+      + (c.note?"<div class='ck-n'>"+esc(c.note)+"</div>":"")
+      + "</div>"
+      + (c.streak?"<span class='ck-s'>"+esc(c.streak)+"</span>":"")
+      + "</div>";
+  }).join("") + "</div>";
+}
+
+function formBlock(f){
+  const d = draft(f.id);
+  let h = "<div class='lf'><div class='lf-t'>"+esc(f.label||f.id)+"</div>"
+        + (f.note?"<div class='pj-quiet'>"+esc(f.note)+"</div>":"")
+        + "<div class='lf-fields'>";
+  (f.fields||[]).forEach(function(x){
+    const id = "ff-"+f.id+"-"+x.id, v = (d[x.id] === undefined || d[x.id] === null) ? "" : String(d[x.id]);
+    h += "<div class='lf-f"+(x.wide?" wide":"")+"'><label>"+esc(x.label||x.id)+(x.required?"":" <i>optional</i>")+"</label>";
+    if(x.type === "choice"){
+      const opts = x.options || [];
+      if(opts.length <= (x.buttons || 6)){
+        h += "<div class='seg'>" + opts.map(function(o){
+          const val = (typeof o === "object") ? o.value : o, lab = (typeof o === "object") ? (o.label||o.value) : o;
+          return "<button class='"+(v===String(val)?"on":"")+"' onclick='DashCore.pickChoice(\""+esc(f.id)+"\",\""+esc(x.id)+"\",\""+esc(val)+"\")'>"+esc(lab)+"</button>";
+        }).join("") + "</div>";
+      } else {
+        h += "<select id='"+id+"' onchange='DashCore.readForm(\""+esc(f.id)+"\")'><option value=''>—</option>"
+          + opts.map(function(o){
+              const val = (typeof o === "object") ? o.value : o, lab = (typeof o === "object") ? (o.label||o.value) : o;
+              return "<option value='"+esc(val)+"'"+(v===String(val)?" selected":"")+">"+esc(lab)+"</option>";
+            }).join("") + "</select>";
+      }
+    } else if(x.type === "date"){
+      h += "<input id='"+id+"' type='date' value='"+esc(v||TODAY)+"'>";
+    } else if(x.type === "number"){
+      h += "<input id='"+id+"' type='number' inputmode='decimal' step='"+esc(x.step||"any")+"' value='"+esc(v)+"' placeholder='"+esc(x.placeholder||"")+"'>";
+    } else {
+      const dl = (x.suggest||[]).length ? "dl-"+f.id+"-"+x.id : "";
+      h += "<input id='"+id+"' type='text' value='"+esc(v)+"' placeholder='"+esc(x.placeholder||"")+"'"+(dl?" list='"+dl+"'":"")+">"
+        + (dl ? "<datalist id='"+dl+"'>"+x.suggest.map(o=>"<option value='"+esc(o)+"'>").join("")+"</datalist>" : "");
+    }
+    h += "</div>";
+  });
+  h += "</div><div class='pbtns'><span class='err' id='ff-err-"+esc(f.id)+"'></span>"
+     + "<button class='btn btn-p' onclick='DashCore.addEntry(\""+esc(f.id)+"\")'>"+IC.plus+" "+esc(f.add||"Add")+"</button></div>";
+  const mine = effEntries(f.id), seen = {};
+  mine.forEach(e => seen[e.id] = true);
+  if(mine.length){
+    h += "<div class='lf-list'>" + mine.map(function(e){
+      const applied = isApplied(e);
+      return "<div class='lf-row'><span class='lf-d'>"+esc(relDay(e.date))+"</span><span class='lf-x'>"+esc(entryText(f,e))+"</span>"
+        + (applied ? "<span class='chip applied'>applied</span>"
+                   : (e.queued ? "<span class='chip queued'>queued</span>" : "<span class='chip unsaved'>unsaved</span>"))
+        + (applied ? "" : "<button class='act rm' onclick='DashCore.rmEntry(\""+esc(e.id)+"\")' title='Remove'>"+IC.x+"</button>")
+        + "</div>";
+    }).join("") + "</div>";
+  }
+  const hist = (f.recent||[]).filter(r => !seen[r.id]);
+  if(hist.length){
+    h += "<div class='lf-list past'>" + hist.map(function(r){
+      return "<div class='lf-row'><span class='lf-d'>"+esc(relDay(r.date))+"</span><span class='lf-x'>"+esc(r.text)+"</span></div>";
+    }).join("") + "</div>";
+  }
+  return h + "</div>";
+}
+
+function uploadBlock(u){
+  const st = upState[u.id] || {};
+  return "<div class='pj'><div class='pj-row'><span class='pj-title'>"+esc(u.label||u.id)+"</span>"
+    + (u.last?"<span class='pj-stage'>"+esc(u.last)+"</span>":"")+"</div>"
+    + (u.note?"<div class='pj-quiet'>"+esc(u.note)+"</div>":"")
+    + "<div class='up'><input id='up-"+esc(u.id)+"' type='file' accept='"+esc(u.accept||"")+"'>"
+    + "<button class='btn btn-p' "+(st.busy?"disabled":"")+" onclick='DashCore.doUpload(\""+esc(u.id)+"\")'>"+(st.busy?IC.load:IC.up)+" Upload</button></div>"
+    + (st.err?"<p class='err'>"+esc(st.err)+"</p>":"")
+    + (st.ok?"<div class='pj-quiet'>"+IC.ok+" Saved as "+esc(st.ok)+". The page reloads itself when the rebuilt brief lands (about a minute).</div>":"")
+    + "</div>";
 }
 
 // ── section wrapper ──────────────────────────────────────────────────────────
@@ -1150,7 +1395,36 @@ function renderBlock(b){
     }, {note: txt(b.id+".note", b.note)});
   }
 
-  if(b.kind === "session")  return section(L, () => sessionBlock(BRIEF.session), {note:txt(b.id+".note", b.note)});
+  if(b.kind === "session"){
+    const list = BRIEF.sessions || (BRIEF.session ? [BRIEF.session] : []);
+    return section(L, () => list.length ? list.map(sessionBlock).join("") : sessionBlock(null),
+                   {note:txt(b.id+".note", b.note)});
+  }
+  if(b.kind === "checks"){
+    const list = checkItems();
+    if(!list.length) return "";
+    return section(L, () => checksBlock(list), {note:txt(b.id+".note", b.note)});
+  }
+  if(b.kind === "log"){
+    const list = formDefs();
+    if(!list.length) return "";
+    if(!FORMSEL || !list.some(f => f.id === FORMSEL))
+      FORMSEL = (BRIEF.defaultForm && list.some(f => f.id === BRIEF.defaultForm)) ? BRIEF.defaultForm : list[0].id;
+    return section(L, function(){
+      const pending = id => effEntries(id).filter(e => !isApplied(e)).length;
+      let h = list.length > 1 ? "<div class='seg lf-tabs'>" + list.map(function(f){
+        const n = pending(f.id);
+        return "<button class='"+(f.id===FORMSEL?"on":"")+"' onclick='DashCore.pickForm(\""+esc(f.id)+"\")'>"
+          + esc(f.label||f.id) + (n ? " · "+n : "") + "</button>";
+      }).join("") + "</div>" : "";
+      return h + formBlock(list.find(f => f.id === FORMSEL));
+    }, {note:txt(b.id+".note", b.note)});
+  }
+  if(b.kind === "upload"){
+    const list = uploadDefs();
+    if(!list.length) return "";
+    return section(L, () => list.map(uploadBlock).join(""), {note:txt(b.id+".note", b.note)});
+  }
   if(b.kind === "metrics")  return section(L, () => metricsBlock(BRIEF.metrics||[]), {note:txt(b.id+".note", b.note)});
   if(b.kind === "scales"){
     const list = BRIEF.scales || [];
@@ -1236,7 +1510,7 @@ function render(){
       + "<a class='back' href='../'>"+IC.back+" dashboards</a>"
       + "<h2>Couldn't load</h2><div class='ebox'>"+esc(errMsg)+"</div>"
       + (errMsg.indexOf("404")===0
-          ? "<p>If the repository and token are right, <code>"+esc(M.briefPath)+"</code> may not exist yet. Ask Claude for the morning brief.</p>"
+          ? "<p>If the repository and token are right, <code>"+esc(M.briefPath)+"</code> may not exist yet — the brief workflow in the data repository has not run.</p>"
           : "")
       + "<div class='pbtns'><button class='lnk' onclick='DashCore.resetConfig()'>Change repository/token</button>"
       + "<button class='btn btn-p' onclick='DashCore.loadBrief()'>Retry</button></div></div>";
@@ -1260,7 +1534,7 @@ function render(){
      + IC.up + (nLocal ? " Save ("+nLocal+")" : " Save") + "</button></div></div>";
 
   if(BRIEF.date !== TODAY)
-    h += "<div class='warn'>"+IC.warn+" This brief is from "+fd(BRIEF.date)+". Ask Claude for today's.</div>";
+    h += "<div class='warn'>"+IC.warn+" This brief is from "+fd(BRIEF.date)+" — today's has not been built yet. Check the brief workflow in the data repository.</div>";
   meta.warnings.forEach(function(w,i){
     if(WDISM[i]) return;
     h += "<div class='warn'>"+IC.warn+"<span style='flex:1'>"+esc(w)+"</span>"
@@ -1326,6 +1600,7 @@ return {
   addBraindump, rmBraindump, toggleBDEdit, saveBDEdit, toggleBDExpand,
   dismissInbox, toggleIB, convertInbox,
   keepRead, dismissRead, togglePP, toggleAbs, readToTask,
-  setReading, toggleStar, push, toggleHide, toggleSection, dismissWarn, closeModal
+  setReading, toggleCheck, pickForm:function(id){ if(FORMSEL) readForm(FORMSEL); FORMSEL = id; render(); }, pickChoice, readForm, addEntry, rmEntry, doUpload,
+  toggleStar, push, toggleHide, toggleSection, dismissWarn, closeModal
 };
 })();

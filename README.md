@@ -27,8 +27,8 @@ What is left here is an engine.
 
 Three layers, read in this order:
 
-1. **brief** — `today.json`, written each morning into a private repository.
-   Read-only here.
+1. **brief** — `today.json`, built in the private repository by a scheduled
+   workflow (and rebuilt whenever its data changes). Read-only here.
 2. **journal** — `today_changes.json`, written **only** by the dashboard.
 3. **local** — `localStorage`, edits not yet pushed to the journal.
 
@@ -46,7 +46,11 @@ A dashboard is a list of typed blocks. Each has an `id`; a block claims the brie
 items whose `group` matches it, and takes its visible name from the brief.
 
 `items` · `projects` · `reading` · `recent` · `inbox` · `braindump` ·
-`session` · `metrics` · `scales`
+`session` · `metrics` · `scales` · `checks` · `log` · `upload`
+
+`log` renders whatever forms the brief defines, `checks` whatever daily ticks it
+defines, and `upload` writes a chosen file to a path the brief names — so a new
+kind of log needs no change here.
 
 Adding a dashboard: copy a folder, edit the block list, add a row to the launcher,
 bump the `?v=` cache-buster and `BUILD` in `core.js`.

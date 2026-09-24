@@ -85,10 +85,42 @@ Everything is optional except `date`. An empty block does not render.
   ],
 
   // optional blocks
-  "session": { "title": "…", "when": "…", "duration": "…", "where": "…", "note": "…",
-               "exercises": [ { "name": "…", "prescription": "…", "last": "…" } ] },
+  "sessions": [                      // one card each; `session` (single) still works
+    { "title": "…", "when": "…", "duration": "…", "where": "…", "note": "…",
+      "exercises": [ { "name": "…", "prescription": "…",
+                       "last": "…", "lastLabel": "last ",   // prefix before `last`
+                       "why": "…",                          // small grey line
+                       "flag": "…" } ] }                    // warning line
+  ],
   "metrics": [ { "name": "…", "value": "…", "delta": "…", "dir": "up" } ],
-  "scales":  [ { "id": "s1", "label": "…", "max": 3, "note": "…" } ]
+  "scales":  [ { "id": "s1", "label": "…", "max": 3, "note": "…" } ],
+
+  // daily ticks — journal `checks`
+  "checks":  [ { "id": "c1", "label": "…", "note": "…",
+                 "done": false,              // already recorded for `date`
+                 "streak": "5/7 days" } ],
+
+  // structured log forms — journal `entries`
+  "forms": [
+    { "id": "f1",                    // [a-z0-9-]; the applier files entries by it
+      "label": "…", "note": "…", "add": "button text",
+      "fields": [
+        { "id": "date", "label": "…", "type": "date" },          // defaults to today
+        { "id": "a", "label": "…", "type": "choice", "required": true,
+          "options": ["x", "y"] | [ { "value": "x", "label": "…" } ],
+          "buttons": 6,               // up to this many render as buttons, else a select
+          "default": "x", "wide": true },
+        { "id": "b", "label": "…", "type": "text", "keep": true,  // survives Add
+          "suggest": ["…"], "placeholder": "…" },
+        { "id": "c", "label": "…", "type": "number", "step": "0.5", "unit": "…" }
+      ],
+      "recent": [ { "id": "entry id", "date": "…", "text": "…" } ] }  // already filed
+  ],
+
+  // a file written straight into the data repository (not via the journal)
+  "uploads": [ { "id": "u1", "label": "…", "note": "…", "last": "…",
+                 "path": "dir/name-{date}.json",   // {date} = local today
+                 "accept": ".json", "json": true, "requireKeys": ["k"] } ]
 }
 ```
 
@@ -120,6 +152,9 @@ Created empty each morning. The dashboard appends; a workflow applies and
   "inbox":     { "msg-001":  { "status": "task", "cid": "c-…" } },
   "reading":   { "stable-id": { "status": "keep" } },  // keep | task | dismissed
   "readings":  { "s1": 1 },
+  "entries":   [ { "id": "e-…", "form": "f1", "date": "…", "ts": "…",
+                   "values": { "a": "x", "b": "…" }, "applied": { "at": "…" } } ],
+  "checks":    { "c1": { "done": true, "date": "…", "ts": "…" } },   // fresh entry replaces an applied one
   "errors":    [ { "at": "…", "messages": ["…"] } ]    // only if something failed
 }
 ```
@@ -135,6 +170,15 @@ Created empty each morning. The dashboard appends; a workflow applies and
 | `braindump[]` | appended verbatim to a markdown file |
 | `reading[].keep` | appended to a reading list |
 | `readings` | appended to a readings log |
+| `entries[]` | one JSON line per entry in `<dir>/<form>.jsonl`, id-deduplicated |
+| `checks{}` | one JSON line in `<dir>/checks.jsonl`; the last line per day wins |
+
+## Who writes the brief
+
+Nothing here cares, but the design assumes **one writer**: a script in the data
+repository, run by a scheduled workflow and after every journal apply. After a
+Save or an upload the dashboard polls for a new `generated` stamp and reloads
+itself, so the rebuilt brief shows up without a manual refresh.
 
 Comments and re-dates happen **before** closes, so a closing note is never lost
 to a later failure. A failure is recorded in `errors` and the entry stays
