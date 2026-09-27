@@ -84,6 +84,14 @@ Everything is optional except `date`. An empty block does not render.
       "suggest": "prefilled title", "topic": "beta", "suggestDue": "2026-01-22" }
   ],
 
+  // optional: a strip under the header, one cell per day (usually Mon–Sun)
+  "week": [
+    { "day": "…", "date": "2026-01-12", "today": false,
+      "items": [ { "text": "short label", "topic": "alpha",
+                   "done": true,          // true ✓ · false struck through · null nothing yet
+                   "extra": false } ] }   // dashed: happened, but the plan didn't ask for it
+  ],
+
   // optional blocks
   "sessions": [                      // one card each; `session` (single) still works
     { "title": "…", "when": "…", "duration": "…", "where": "…", "note": "…",

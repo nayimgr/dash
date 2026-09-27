@@ -44,7 +44,7 @@
 window.DashCore = (function(){
 
 const API   = "https://api.github.com";
-const BUILD = "20260924-2200";
+const BUILD = "20260927-1700";
 
 let M        = null;     // manifest
 let REPO     = "";
@@ -1247,6 +1247,25 @@ function section(label, bodyFn, opts){
   return h;
 }
 
+// ── the week strip ───────────────────────────────────────────────────────────
+// Seven cells, one per day, straight from `BRIEF.week`. The brief decides what a
+// day holds and whether it happened (`done`: true / false / null); this only
+// draws it. `extra` marks something done that the plan did not ask for.
+function weekStrip(week){
+  return "<div class='week' role='list' aria-label='"+esc(txt("week","Week"))+"'>" + week.map(function(w){
+    const day = String(w.date||"").split("-")[2] || "";
+    return "<div class='wk-day"+(w.today?" today":"")+"' role='listitem'>"
+      + "<div class='wk-h'><span class='wk-n'>"+esc(w.day||"")+"</span><span class='wk-d'>"+esc(day.replace(/^0/,""))+"</span></div>"
+      + "<div class='wk-its'>" + (w.items||[]).map(function(it){
+          const st = it.done === true ? " done" : it.done === false ? " missed" : "";
+          return "<div class='wk-it tag "+tclass(it.topic)+st+(it.extra?" extra":"")+"'"
+            + (it.done === false ? " title='not logged'" : it.extra ? " title='not in the plan'" : "")+">"
+            + (it.done === true ? IC.check : "") + "<span>"+esc(it.text||"")+"</span></div>";
+        }).join("") + "</div>"
+      + "</div>";
+  }).join("") + "</div>";
+}
+
 // ── the calendar strip ───────────────────────────────────────────────────────
 function calendarBlock(cal){
   const now = hhmm(new Date());
@@ -1532,6 +1551,8 @@ function render(){
          + (hideSettled?IC.eyeOff:IC.eye)+"</button>" : "")
      + "<button class='btn "+(nLocal?"btn-p pulse":"")+"' onclick='DashCore.push()' "+(nLocal?"":"disabled")+">"
      + IC.up + (nLocal ? " Save ("+nLocal+")" : " Save") + "</button></div></div>";
+
+  if(Array.isArray(BRIEF.week) && BRIEF.week.length) h += weekStrip(BRIEF.week);
 
   if(BRIEF.date !== TODAY)
     h += "<div class='warn'>"+IC.warn+" This brief is from "+fd(BRIEF.date)+" — today's has not been built yet. Check the brief workflow in the data repository.</div>";
