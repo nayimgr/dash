@@ -10,13 +10,13 @@
 <meta name="robots" content="noindex, nofollow">
 <title>ops</title>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='20' fill='%232563EB'/><text y='70' x='50' text-anchor='middle' font-size='56' font-family='sans-serif' font-weight='600' fill='white'>o</text></svg>">
-<link rel="stylesheet" href="../shared/style.css?v=20260927-1900">
+<link rel="stylesheet" href="../shared/style.css?v=20260927-2100">
 </head>
 <body>
 <div id="app"></div>
 <div class="overlay" id="overlay"><div class="modal" id="modal"></div></div>
 
-<script src="../shared/core.js?v=20260927-1900"></script>
+<script src="../shared/core.js?v=20260927-2100"></script>
 <script>
 // Structure only. Every label, topic, prompt and colour assignment comes from
 // the brief, which lives in a private repository — so this file says what the
@@ -31,13 +31,17 @@ DashCore.start({
   changesPath: "brief/ops/today_changes.json",
   rebuild:     "build-brief.yml",   // dispatched when the brief is from yesterday
   dateField:   { default:"Reminder", person:"Next contact" },
+  subtasks:    false,               // notes inside a task, not a hierarchy
 
   blocks: [
     { kind:"items",     id:"focus",    label:"Focus",    allowNew:true },
     { kind:"items",     id:"tasks",    label:"Tasks",    allowNew:true },
+    { kind:"items",     id:"personal", label:"Personal", allowNew:true },
     { kind:"projects",  id:"projects", label:"Projects" },
     { kind:"items",     id:"people",   label:"People" },
     { kind:"reading",   id:"reading",  label:"Reading" },
+    { kind:"items",     id:"readlist", label:"List",     allowNew:true, undated:true, count:true },
+    { kind:"items",     id:"someday",  label:"Later",    allowNew:true, undated:true, count:true, collapsed:true },
     { kind:"recent",    id:"recent",   label:"Recently done", limit:40 },
     { kind:"inbox",     id:"inbox",    label:"Inbox" },
     { kind:"braindump", id:"notes",    label:"Notes" }

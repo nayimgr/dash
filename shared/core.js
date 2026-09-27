@@ -44,7 +44,7 @@
 window.DashCore = (function(){
 
 const API   = "https://api.github.com";
-const BUILD = "20260927-1900";
+const BUILD = "20260927-2100";
 
 let M        = null;     // manifest
 let REPO     = "";
@@ -58,6 +58,7 @@ let S        = null;     // local, unpushed
 let panels   = {};
 let bdPanels = {};
 let showNF   = null;   // id of the section whose new-task form is open
+let NFBLOCK  = null;   // the manifest block that form belongs to
 let saving   = false;
 let saveRes  = null;
 let lastLoad = null;
@@ -100,6 +101,7 @@ const IC = {
   check:`<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>`,
   msg:`<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>`,
   cal:`<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>`,
+  link:`<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>`,
   ext:`<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>`,
   x:`<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>`,
   plus:`<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>`,
@@ -132,7 +134,7 @@ function hhmm(d){ return d.toLocaleTimeString("en-GB",{hour:"2-digit",minute:"2-
 // label itself, which keeps colours stable without naming anything here.
 // A "a:b" topic collapses to "a", so variants of one thing share a colour and
 // the label carries the distinction.
-const SLOTS = 9;
+const SLOTS = 9;          // derived slots; a brief may also assign 10
 function tslot(base){
   const map = (BRIEF && BRIEF.topicSlots) || {};
   if(map[base]) return map[base];
@@ -318,9 +320,12 @@ function toggleHide(){
 }
 function collKey(){ return K("coll"); }
 function loadColl(){ try{ COLL = JSON.parse(ls(collKey())) || {}; }catch(e){ COLL = {}; } }
-function isCollapsed(id){ return !!COLL[id]; }
+// A block can start collapsed (`collapsed:true` in the manifest); once toggled,
+// the choice on this device wins.
+const DEFCOLL = {};
+function isCollapsed(id){ return (id in COLL) ? !!COLL[id] : !!DEFCOLL[id]; }
 function isSubCollapsed(n){ return !COLL["sub-"+n]; }
-function toggleSection(id){ COLL[id] = !COLL[id]; lsSet(collKey(), JSON.stringify(COLL)); render(); }
+function toggleSection(id){ COLL[id] = !isCollapsed(id); lsSet(collKey(), JSON.stringify(COLL)); render(); }
 function wdismKey(){ return K("wdism:"+(BRIEF?BRIEF.date:"none")); }
 function loadWdism(){ try{ WDISM = JSON.parse(ls(wdismKey())) || {}; }catch(e){ WDISM = {}; } }
 function dismissWarn(i){ WDISM[i]=true; lsSet(wdismKey(),JSON.stringify(WDISM)); render(); }
@@ -561,7 +566,9 @@ function addTask(){
     topic:    document.getElementById("nt-tp").value,
     due:      document.getElementById("nt-d").value  || null,
     deadline: document.getElementById("nt-dl").value || null,
-    note:     document.getElementById("nt-n").value.trim() || null
+    note:     document.getElementById("nt-n").value.trim() || null,
+    // Shown under the block it was added from until the brief places it.
+    group:    NFBLOCK ? NFBLOCK.id : undefined
   });
   showNF = null; saveLocal(); render();
 }
@@ -931,6 +938,7 @@ function card(item){
     // A person is a standing thread, not a piece of work: offering to break one
     // into subtasks is noise on every card in the People column.
     if(isPerson && !hasSubs) return "";
+    if(M.subtasks === false && !hasSubs) return "";
     if(!hasSubs && !showForm)
       return "<button class='sub-trigger' onclick='DashCore.toggleSubForm("+n+")'>"+IC.plus+" subtask</button>";
     const subId  = "sub-"+n, subCol = isSubCollapsed(n);
@@ -980,6 +988,7 @@ function card(item){
     + (isTask?"<button class='act"+(done?" on-green":"")+"' onclick='DashCore.setCh("+n+",{done:"+(!done)+"})' title='"+(done?"Undo":"Done")+"'>"+IC.check+"</button>":"")
     + "<button class='act"+(p.log?" on":"")+(c.log&&!p.log?" on-green":"")+"' onclick='DashCore.toggleP("+n+",\"log\")' title='Log a note'>"+IC.msg+"</button>"
     + "<button class='act"+(p.date?" on":"")+"' onclick='DashCore.toggleP("+n+",\"date\")' title='"+esc(dlabel)+"'>"+IC.cal+"</button>"
+    + (item.link?"<a class='act' href='"+esc(item.link)+"' target='_blank' rel='noopener' title='Open link'>"+IC.link+"</a>":"")
     + (item.url?"<a class='act' href='"+esc(item.url)+"' target='_blank' rel='noopener' title='GitHub'>"+IC.ext+"</a>":"")
     + "</div></div><div class='card-meta'>" + ttag(item.topic)
     + (dd?"<span class='chip "+dcs+"'>"+(dcs==="overdue"?"overdue · ":"")+fd(dd)+(c.reminder?" ✓":"")+"</span>":"")
@@ -1259,7 +1268,9 @@ function uploadBlock(u){
 // ── section wrapper ──────────────────────────────────────────────────────────
 function section(label, bodyFn, opts){
   opts = opts || {};
-  const id = secId(label), col = isCollapsed(id);
+  const id = secId(label);
+  if(opts.collapsed) DEFCOLL[id] = true;
+  const col = isCollapsed(id);
   let h = "<div class='sec"+(opts.cls?" "+opts.cls:"")+"'><div class='sec-hdr'>"
         + "<span class='sec-label'>"+esc(label)+"</span><div class='sec-r'>"
         + (opts.note ? "<span class='sec-note'>"+esc(opts.note)+"</span>" : "")
@@ -1344,8 +1355,8 @@ function renderBlock(b){
           + "<div class='field'><label>Title</label><input id='nt-t' type='text' placeholder='"+esc(txt(b.id+".new", b.placeholder)||"Title…")+"'></div>"
           + "<div class='grid' style='grid-template-columns:1fr 1fr 1fr'>"
           + "<div class='field'><label>Topic</label><select id='nt-tp'>"
-          + (topics()).map(t=>"<option"+(t===b.defaultTopic?" selected":"")+">"+esc(t)+"</option>").join("")+"</select></div>"
-          + "<div class='field'><label>Reminder</label><input id='nt-d' type='date' value='"+TODAY+"'></div>"
+          + (topics()).map(t=>"<option"+(t===(b.defaultTopic||txt(b.id+".topic",""))?" selected":"")+">"+esc(t)+"</option>").join("")+"</select></div>"
+          + "<div class='field'><label>Reminder</label><input id='nt-d' type='date' value='"+(b.undated?"":TODAY)+"'></div>"
           + "<div class='field'><label>Deadline</label><input id='nt-dl' type='date'></div></div>"
           + "<div class='field'><label>Note (optional)</label><textarea id='nt-n' placeholder='Context…'></textarea></div>"
           + "<p class='err' id='nt-err'></p>"
@@ -1360,7 +1371,7 @@ function renderBlock(b){
         h += "<div class='hidden-row'>"+hidden.length+" hidden until applied"
            + " <button class='lnk' onclick='DashCore.toggleHide()'>show</button></div>";
       return h;
-    }, {add:add});
+    }, {add:add, collapsed:!!b.collapsed, note:(b.count && list.length) ? String(list.length) : txt(b.id+".note", b.note)});
   }
 
   if(b.kind === "projects"){
@@ -1647,7 +1658,8 @@ function start(manifest){
 return {
   start, loadBrief, saveConfig, resetConfig, rebuild:function(){ rebuildStale(true); },
   setCh, toggleP, saveLog, saveDate,
-  addTask, rmTask, addSubtask, toggleSubForm, toggleNew:function(id){ showNF = (showNF === id) ? null : id; render(); },
+  addTask, rmTask, addSubtask, toggleSubForm, toggleNew:function(id){ showNF = (showNF === id) ? null : id;
+    NFBLOCK = (M.blocks||[]).find(b => secId(b.id || b.label) === id) || null; render(); },
   toggleNtP, saveNtLog, saveNtDate, toggleStarNt, toggleNtDone,
   addBraindump, rmBraindump, toggleBDEdit, saveBDEdit, toggleBDExpand,
   dismissInbox, toggleIB, convertInbox,
