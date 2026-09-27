@@ -44,7 +44,7 @@
 window.DashCore = (function(){
 
 const API   = "https://api.github.com";
-const BUILD = "20260927-1700";
+const BUILD = "20260927-1900";
 
 let M        = null;     // manifest
 let REPO     = "";
@@ -66,6 +66,7 @@ let COLL     = {};
 let WDISM    = {};
 let subForms = {};
 let watchT   = [];       // timers polling for the Action's applied marks
+let REBUILD  = "";       // "" | "asked" | "denied" | "failed" — a stale brief's rebuild
 let FDRAFT   = {};       // log-form drafts, in memory: {formId: {fieldId: value}}
 let upState  = {};       // upload status per upload id
 let FORMSEL  = null;     // which log form is open
@@ -405,11 +406,13 @@ async function loadBrief(){
     lastLoad = new Date();
     document.title = txt("title", M.title);
     view="ready";
+    if(BRIEF.date >= TODAY) REBUILD = "";
   }catch(e){
     errMsg = e.message || String(e);
     view="error";
   }
   render();
+  if(view === "ready") rebuildStale(false);
 }
 
 // ── push local edits into the journal ────────────────────────────────────────
@@ -505,6 +508,26 @@ function watchForApply(){
       }catch(e){ /* a failed poll is not worth surfacing */ }
     }, ms));
   });
+}
+
+// A scheduled workflow can run hours late (GitHub queues cron jobs behind
+// everything else), so a brief from yesterday is rebuilt on demand: the
+// manifest names the workflow and this page dispatches it — at most once every
+// ten minutes per device — then waits for the new brief. Needs a token with
+// Actions: read and write; without it the page says so and carries on.
+async function rebuildStale(force){
+  if(!M.rebuild || !BRIEF || BRIEF.date >= TODAY) return;
+  const key = K("rebuilt"), last = Number(ls(key) || 0);
+  if(!force && Date.now() - last < 600000){ REBUILD = REBUILD || "asked"; watchBrief(); return; }
+  try{
+    await api("/repos/"+REPO+"/actions/workflows/"+encodeURIComponent(M.rebuild)+"/dispatches", "POST", {ref:"main"});
+    lsSet(key, String(Date.now()));
+    REBUILD = "asked";
+    watchBrief();
+  }catch(e){
+    REBUILD = /^(403|404)/.test(e.message||"") ? "denied" : "failed";
+  }
+  render();
 }
 
 // The brief is rebuilt by a workflow whenever the data under it changes, so a
@@ -1554,8 +1577,16 @@ function render(){
 
   if(Array.isArray(BRIEF.week) && BRIEF.week.length) h += weekStrip(BRIEF.week);
 
-  if(BRIEF.date !== TODAY)
-    h += "<div class='warn'>"+IC.warn+" This brief is from "+fd(BRIEF.date)+" — today's has not been built yet. Check the brief workflow in the data repository.</div>";
+  if(BRIEF.date !== TODAY){
+    const why = !M.rebuild ? " Check the brief workflow in the data repository."
+      : REBUILD === "asked"  ? " Building today's now — it reloads by itself in a minute or two."
+      : REBUILD === "denied" ? " Couldn't start the build: the token needs Actions → Read and write."
+      : REBUILD === "failed" ? " Couldn't start the build."
+      : "";
+    h += "<div class='warn'>"+IC.warn+"<span style='flex:1'>This brief is from "+fd(BRIEF.date)+" — today's has not been built yet."+why+"</span>"
+       + (M.rebuild && REBUILD !== "asked" ? "<button class='lnk' onclick='DashCore.rebuild()'>build now</button>" : "")
+       + "</div>";
+  }
   meta.warnings.forEach(function(w,i){
     if(WDISM[i]) return;
     h += "<div class='warn'>"+IC.warn+"<span style='flex:1'>"+esc(w)+"</span>"
@@ -1614,7 +1645,7 @@ function start(manifest){
 }
 
 return {
-  start, loadBrief, saveConfig, resetConfig,
+  start, loadBrief, saveConfig, resetConfig, rebuild:function(){ rebuildStale(true); },
   setCh, toggleP, saveLog, saveDate,
   addTask, rmTask, addSubtask, toggleSubForm, toggleNew:function(id){ showNF = (showNF === id) ? null : id; render(); },
   toggleNtP, saveNtLog, saveNtDate, toggleStarNt, toggleNtDone,

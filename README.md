@@ -62,6 +62,13 @@ stored only in that browser's `localStorage`. Nothing is committed here — no
 data, no credentials, no analytics, no third-party scripts. Every network request
 goes to `api.github.com` and nowhere else.
 
+## A brief that is late
+
+Scheduled workflows on GitHub can start hours late. A dashboard whose manifest
+names `rebuild` (the brief workflow's file name) dispatches that workflow when
+it loads a brief dated before today, then reloads when the new one lands. The
+token then also needs **Actions: read and write**; without it the page says so.
+
 ## Deploying
 
 GitHub Pages, `main`, `/ (root)`. Pages caches assets for around ten minutes, so
