@@ -44,7 +44,7 @@
 window.DashCore = (function(){
 
 const API   = "https://api.github.com";
-const BUILD = "20260927-2230";
+const BUILD = "20260927-2330";
 
 let M        = null;     // manifest
 let REPO     = "";
@@ -1313,6 +1313,50 @@ function weekStrip(week){
   }).join("") + "</div>";
 }
 
+// ── the activity grid ────────────────────────────────────────────────────────
+// GitHub-style: one column per week (Mon at the top), one cell per day. The
+// brief names the kinds and their colour slots, and lists each day's kinds; a
+// day with two or three kinds is split into equal vertical bands.
+function heatVar(slot){ return "var(--t"+slot+"-tx)"; }
+function heatmap(hm){
+  const kinds = hm.kinds || [], slot = {}, label = {};
+  kinds.forEach(function(k){ slot[k.id] = k.slot; label[k.id] = k.label || k.id; });
+  const days = hm.days || [];
+  if(!days.length) return "";
+  const weeks = Math.ceil(days.length / 7);
+  const names = []; let lastM = "", lastAt = -9;
+  for(let w=0; w<weeks; w++){
+    const d = days[w*7]; const m = d ? String(d.date).slice(5,7) : "";
+    names.push("");
+    if(m && m !== lastM){
+      // A label needs ~3 columns; a month that starts right after the previous
+      // label wins the space (the grid's first, partial month usually loses).
+      if(w - lastAt < 3) names[lastAt] = "";
+      names[w] = new Date(d.date+"T12:00:00").toLocaleDateString("en-GB",{month:"short"});
+      lastAt = w;
+    }
+    if(m) lastM = m;
+  }
+  const months = names.map(n => "<span>"+esc(n)+"</span>").join("");
+  const cells = days.map(function(d){
+    const ks = (d.kinds||[]).filter(k => slot[k]);
+    let bg = "";
+    if(ks.length === 1) bg = heatVar(slot[ks[0]]);
+    else if(ks.length > 1){
+      const step = 100 / ks.length;
+      bg = "linear-gradient(to right," + ks.map((k,i) => heatVar(slot[k])+" "+(i*step)+"% "+((i+1)*step)+"%").join(",") + ")";
+    }
+    const tip = fd(d.date) + (ks.length ? " · " + ks.map(k => label[k]).join(" + ") : "") + (d.note ? " · " + d.note : "");
+    return "<i class='hm-c"+(d.date===TODAY?" today":"")+(d.future?" fut":"")+"'"+(bg?" style='background:"+bg+"'":"")+" title='"+esc(tip)+"'></i>";
+  }).join("");
+  const legend = kinds.map(k => "<span class='hm-k'><i style='background:"+heatVar(k.slot)+"'></i>"+esc(k.label||k.id)+"</span>").join("")
+    + "<span class='hm-k'><i class='hm-empty'></i>"+esc(hm.emptyLabel||"")+"</span>";
+  return "<div class='hm' style='--hm-w:"+weeks+"'>"
+    + "<div class='hm-months'>"+months+"</div>"
+    + "<div class='hm-grid'>"+cells+"</div>"
+    + "<div class='hm-legend'>"+legend+(hm.note?"<span class='hm-note'>"+esc(hm.note)+"</span>":"")+"</div></div>";
+}
+
 // ── the calendar strip ───────────────────────────────────────────────────────
 function calendarBlock(cal){
   const now = hhmm(new Date());
@@ -1490,6 +1534,11 @@ function renderBlock(b){
     const list = uploadDefs();
     if(!list.length) return "";
     return section(L, () => list.map(uploadBlock).join(""), {note:txt(b.id+".note", b.note)});
+  }
+  if(b.kind === "heatmap"){
+    const hm = BRIEF.heatmap;
+    if(!hm || !(hm.days||[]).length) return "";
+    return section(L, () => heatmap(hm), {note:txt(b.id+".note", b.note)});
   }
   if(b.kind === "metrics")  return section(L, () => metricsBlock(BRIEF.metrics||[]), {note:txt(b.id+".note", b.note)});
   if(b.kind === "scales"){

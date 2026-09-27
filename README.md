@@ -46,7 +46,7 @@ A dashboard is a list of typed blocks. Each has an `id`; a block claims the brie
 items whose `group` matches it, and takes its visible name from the brief.
 
 `items` · `projects` · `reading` · `recent` · `inbox` · `braindump` ·
-`session` · `metrics` · `scales` · `checks` · `log` · `upload`
+`session` · `metrics` · `scales` · `checks` · `log` · `upload` · `heatmap`
 
 `log` renders whatever forms the brief defines, `checks` whatever daily ticks it
 defines, and `upload` writes a chosen file to a path the brief names — so a new

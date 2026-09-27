@@ -92,6 +92,14 @@ Everything is optional except `date`. An empty block does not render.
                    "extra": false } ] }   // dashed: happened, but the plan didn't ask for it
   ],
 
+  // optional: a GitHub-style grid (block kind "heatmap"), columns = weeks, Mon on top
+  "heatmap": {
+    "kinds": [ { "id": "k1", "label": "…", "slot": 4 } ],   // colour = that topic slot
+    "emptyLabel": "…", "note": "…",
+    "days": [ { "date": "2026-01-12", "kinds": ["k1", "k2"],  // 2–3 kinds split the cell
+                "future": false } ]                           // oldest first, whole weeks
+  },
+
   // optional blocks
   "sessions": [                      // one card each; `session` (single) still works
     { "title": "…", "when": "…", "duration": "…", "where": "…", "note": "…",

@@ -148,6 +148,20 @@
     .wk-its{flex-direction:column}
     .wk-it{font-size:12px;padding:3px 6px}
   }
+  /* Activity grid — columns are weeks, rows Mon..Sun; cells stay square. */
+  .hm{margin-bottom:10px}
+  .hm-months,.hm-grid{display:grid;grid-template-columns:repeat(var(--hm-w),minmax(0,1fr));gap:2px}
+  .hm-months{font-size:9px;color:var(--text-3);margin-bottom:3px;white-space:nowrap}
+  .hm-months span{overflow:visible}
+  .hm-grid{grid-template-rows:repeat(7,auto);grid-auto-flow:column}
+  .hm-c{display:block;aspect-ratio:1;border-radius:2px;background:var(--border);font-style:normal}
+  .hm-c.today{outline:1.5px solid var(--text);outline-offset:0}
+  .hm-c.fut{opacity:.35}
+  .hm-legend{display:flex;flex-wrap:wrap;gap:4px 12px;margin-top:8px;font-size:11px;color:var(--text-2);align-items:center}
+  .hm-k{display:inline-flex;align-items:center;gap:4px}
+  .hm-k i{display:inline-block;width:10px;height:10px;border-radius:2px;font-style:normal}
+  .hm-k i.hm-empty{background:var(--border)}
+  .hm-note{color:var(--text-3);margin-left:auto}
   .cal-list{margin-bottom:4px}
   .cal-row{display:flex;align-items:baseline;gap:10px;padding:5px 0;border-bottom:1px solid var(--border);font-size:13px}
   .cal-row:last-child{border-bottom:none}
