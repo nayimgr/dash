@@ -44,7 +44,7 @@
 window.DashCore = (function(){
 
 const API   = "https://api.github.com";
-const BUILD = "20260927-2100";
+const BUILD = "20260927-2230";
 
 let M        = null;     // manifest
 let REPO     = "";
@@ -520,15 +520,28 @@ function watchForApply(){
 // manifest names the workflow and this page dispatches it — at most once every
 // ten minutes per device — then waits for the new brief. Needs a token with
 // Actions: read and write; without it the page says so and carries on.
-async function rebuildStale(force){
-  if(!M.rebuild || !BRIEF || BRIEF.date >= TODAY) return;
+// The reload button asks too, when the brief is older than half an hour — a
+// calendar event added since the last build shows up without waiting for cron.
+function briefAgeMin(){
+  const g = BRIEF && Date.parse(BRIEF.generated || "");
+  return g ? (Date.now() - g) / 60000 : Infinity;
+}
+async function reload(){
+  await loadBrief();
+  if(view === "ready" && BRIEF.date >= TODAY && briefAgeMin() > 30) rebuildStale(false, true);
+}
+async function rebuildStale(force, old){
+  if(!M.rebuild || !BRIEF || (BRIEF.date >= TODAY && !old)) return;
   const key = K("rebuilt"), last = Number(ls(key) || 0);
   if(!force && Date.now() - last < 600000){ REBUILD = REBUILD || "asked"; watchBrief(); return; }
   try{
     await api("/repos/"+REPO+"/actions/workflows/"+encodeURIComponent(M.rebuild)+"/dispatches", "POST", {ref:"main"});
     lsSet(key, String(Date.now()));
-    REBUILD = "asked";
+    REBUILD = old ? "refresh" : "asked";
     watchBrief();
+    // A rebuild that changes nothing writes nothing, so no new brief arrives:
+    // drop the banner once the watch is over.
+    if(old) setTimeout(function(){ if(REBUILD === "refresh"){ REBUILD = ""; render(); } }, 170000);
   }catch(e){
     REBUILD = /^(403|404)/.test(e.message||"") ? "denied" : "failed";
   }
@@ -1579,7 +1592,7 @@ function render(){
   h += "<div class='hdr'><div><h1>"+esc(heading)+"</h1>"
      + "<div class='hdr-date'>"+esc(new Date().toLocaleDateString("en-GB",{weekday:"long",day:"numeric",month:"long"}))+"</div></div>"
      + "<div class='hdr-r'>"
-     + "<button class='btn btn-icon' onclick='DashCore.loadBrief()' title='Reload'>"+IC.refresh+"</button>"
+     + "<button class='btn btn-icon' onclick='DashCore.reload()' title='Reload'>"+IC.refresh+"</button>"
      + (nSettled ? "<button class='btn btn-icon"+(hideSettled?" on":"")+"' onclick='DashCore.toggleHide()' title='"
          + (hideSettled ? "Show "+nSettled+" settled" : "Hide "+nSettled+" settled") + "'>"
          + (hideSettled?IC.eyeOff:IC.eye)+"</button>" : "")
@@ -1588,6 +1601,8 @@ function render(){
 
   if(Array.isArray(BRIEF.week) && BRIEF.week.length) h += weekStrip(BRIEF.week);
 
+  if(REBUILD === "refresh" && BRIEF.date === TODAY)
+    h += "<div class='warn'>"+IC.refresh+"<span style='flex:1'>Rebuilding with the latest calendar and issues — reloads by itself in a minute or two.</span></div>";
   if(BRIEF.date !== TODAY){
     const why = !M.rebuild ? " Check the brief workflow in the data repository."
       : REBUILD === "asked"  ? " Building today's now — it reloads by itself in a minute or two."
@@ -1656,7 +1671,7 @@ function start(manifest){
 }
 
 return {
-  start, loadBrief, saveConfig, resetConfig, rebuild:function(){ rebuildStale(true); },
+  start, loadBrief, reload, saveConfig, resetConfig, rebuild:function(){ rebuildStale(true); },
   setCh, toggleP, saveLog, saveDate,
   addTask, rmTask, addSubtask, toggleSubForm, toggleNew:function(id){ showNF = (showNF === id) ? null : id;
     NFBLOCK = (M.blocks||[]).find(b => secId(b.id || b.label) === id) || null; render(); },
