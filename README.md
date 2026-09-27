@@ -15,6 +15,8 @@ What is left here is an engine.
 ## Layout
 
     index.html          the launcher
+    icons/              home-screen icon: one month of an activity grid (icon.svg → PNGs)
+    manifest.webmanifest   Android install metadata
     shared/
       core.js           engine: config, API client, state, sync, rendering
       style.css         design tokens and components
