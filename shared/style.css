@@ -150,13 +150,14 @@
   }
   /* Activity grid — columns are weeks, rows Mon..Sun; cells stay square. */
   .hm{margin-bottom:10px}
-  .hm-months,.hm-grid{display:grid;grid-template-columns:repeat(var(--hm-w),minmax(0,1fr));gap:2px}
-  .hm-months{font-size:9px;color:var(--text-3);margin-bottom:3px;white-space:nowrap}
-  .hm-months span{overflow:visible}
-  .hm-grid{grid-template-rows:repeat(7,auto);grid-auto-flow:column}
-  .hm-c{display:block;aspect-ratio:1;border-radius:2px;background:var(--border);font-style:normal}
+  .hm-grid{display:grid;grid-template-rows:auto;grid-auto-rows:auto;gap:2px}
+  .hm-m{grid-row:1;font-size:9px;color:var(--text-3);white-space:nowrap;overflow:hidden;padding-bottom:2px}
+  .hm-c{display:block;aspect-ratio:1;border-radius:2px;background:var(--border);font-style:normal;cursor:pointer}
   .hm-c.today{outline:1.5px solid var(--text);outline-offset:0}
-  .hm-c.fut{opacity:.35}
+  .hm-c.sel{outline:2px solid var(--accent);outline-offset:1px}
+  .hm-c.fut{opacity:.35;cursor:default}
+  .hm-det{margin-top:8px;font-size:12px;color:var(--text-2);background:var(--surface);border:1px solid var(--border);border-radius:var(--r);padding:6px 9px}
+  .hm-det b{color:var(--text);font-weight:600}
   .hm-legend{display:flex;flex-wrap:wrap;gap:4px 12px;margin-top:8px;font-size:11px;color:var(--text-2);align-items:center}
   .hm-k{display:inline-flex;align-items:center;gap:4px}
   .hm-k i{display:inline-block;width:10px;height:10px;border-radius:2px;font-style:normal}

@@ -44,7 +44,7 @@
 window.DashCore = (function(){
 
 const API   = "https://api.github.com";
-const BUILD = "20260927-2330";
+const BUILD = "20260928-0030";
 
 let M        = null;     // manifest
 let REPO     = "";
@@ -1318,42 +1318,64 @@ function weekStrip(week){
 // brief names the kinds and their colour slots, and lists each day's kinds; a
 // day with two or three kinds is split into equal vertical bands.
 function heatVar(slot){ return "var(--t"+slot+"-tx)"; }
+let HMSEL = null;          // the day whose detail is open under the grid
+function hmPick(date){ HMSEL = (HMSEL === date) ? null : date; render(); }
 function heatmap(hm){
   const kinds = hm.kinds || [], slot = {}, label = {};
   kinds.forEach(function(k){ slot[k.id] = k.slot; label[k.id] = k.label || k.id; });
   const days = hm.days || [];
   if(!days.length) return "";
-  const weeks = Math.ceil(days.length / 7);
-  const names = []; let lastM = "", lastAt = -9;
-  for(let w=0; w<weeks; w++){
-    const d = days[w*7]; const m = d ? String(d.date).slice(5,7) : "";
-    names.push("");
-    if(m && m !== lastM){
-      // A label needs ~3 columns; a month that starts right after the previous
-      // label wins the space (the grid's first, partial month usually loses).
-      if(w - lastAt < 3) names[lastAt] = "";
-      names[w] = new Date(d.date+"T12:00:00").toLocaleDateString("en-GB",{month:"short"});
-      lastAt = w;
-    }
-    if(m) lastM = m;
+  const byDate = {};
+  days.forEach(d => byDate[d.date] = d);
+  // Months are separate blocks: a week that straddles two months becomes a
+  // column in each, with only its own days filled. A thin gap between months.
+  const months = [];
+  days.forEach(function(d, i){
+    const m = String(d.date).slice(0,7), wd = i % 7;       // days start on a Monday
+    let mo = months[months.length-1];
+    if(!mo || mo.key !== m){ mo = {key:m, cols:[], first:d.date}; months.push(mo); }
+    if(!mo.cols.length || (wd === 0)) mo.cols.push([]);
+    const col = mo.cols[mo.cols.length-1];
+    col[wd] = d;
+  });
+  const tpl = [], cells = [], heads = [];
+  let c = 1;
+  months.forEach(function(mo, mi){
+    if(mi){ tpl.push("4px"); c++; }
+    const start = c;
+    mo.cols.forEach(function(col){
+      tpl.push("minmax(0,1fr)");
+      for(let r=0; r<7; r++){
+        const d = col[r];
+        if(!d) continue;
+        const ks = (d.kinds||[]).filter(k => slot[k]);
+        let bg = "";
+        if(ks.length === 1) bg = heatVar(slot[ks[0]]);
+        else if(ks.length > 1){
+          const step = 100 / ks.length;
+          bg = "linear-gradient(to right," + ks.map((k,i) => heatVar(slot[k])+" "+(i*step)+"% "+((i+1)*step)+"%").join(",") + ")";
+        }
+        cells.push("<i class='hm-c"+(d.date===TODAY?" today":"")+(d.future?" fut":"")+(HMSEL===d.date?" sel":"")+"'"
+          + " style='grid-column:"+c+";grid-row:"+(r+2)+(bg?";background:"+bg:"")+"'"
+          + " onclick='DashCore.hmPick(\""+esc(d.date)+"\")'></i>");
+      }
+      c++;
+    });
+    const name = new Date(mo.first+"T12:00:00").toLocaleDateString("en-GB",{month:"short"});
+    // A month shown by a single column has no room for its name.
+    heads.push("<span class='hm-m' style='grid-column:"+start+" / "+c+"'>"+(c - start > 1 ? esc(name) : "")+"</span>");
+  });
+  let det = "";
+  const sd = HMSEL && byDate[HMSEL];
+  if(sd){
+    const when = new Date(sd.date+"T12:00:00").toLocaleDateString("en-GB",{weekday:"short",day:"numeric",month:"short"});
+    const what = (sd.detail && sd.detail.length) ? sd.detail : (sd.kinds||[]).map(k => label[k] || k);
+    det = "<div class='hm-det'><b>"+esc(when)+"</b> · "+(what.length ? what.map(esc).join(" · ") : esc(hm.emptyLabel||"—"))+"</div>";
   }
-  const months = names.map(n => "<span>"+esc(n)+"</span>").join("");
-  const cells = days.map(function(d){
-    const ks = (d.kinds||[]).filter(k => slot[k]);
-    let bg = "";
-    if(ks.length === 1) bg = heatVar(slot[ks[0]]);
-    else if(ks.length > 1){
-      const step = 100 / ks.length;
-      bg = "linear-gradient(to right," + ks.map((k,i) => heatVar(slot[k])+" "+(i*step)+"% "+((i+1)*step)+"%").join(",") + ")";
-    }
-    const tip = fd(d.date) + (ks.length ? " · " + ks.map(k => label[k]).join(" + ") : "") + (d.note ? " · " + d.note : "");
-    return "<i class='hm-c"+(d.date===TODAY?" today":"")+(d.future?" fut":"")+"'"+(bg?" style='background:"+bg+"'":"")+" title='"+esc(tip)+"'></i>";
-  }).join("");
   const legend = kinds.map(k => "<span class='hm-k'><i style='background:"+heatVar(k.slot)+"'></i>"+esc(k.label||k.id)+"</span>").join("")
     + "<span class='hm-k'><i class='hm-empty'></i>"+esc(hm.emptyLabel||"")+"</span>";
-  return "<div class='hm' style='--hm-w:"+weeks+"'>"
-    + "<div class='hm-months'>"+months+"</div>"
-    + "<div class='hm-grid'>"+cells+"</div>"
+  return "<div class='hm'><div class='hm-grid' style='grid-template-columns:"+tpl.join(" ")+"'>"
+    + heads.join("") + cells.join("") + "</div>" + det
     + "<div class='hm-legend'>"+legend+(hm.note?"<span class='hm-note'>"+esc(hm.note)+"</span>":"")+"</div></div>";
 }
 
@@ -1720,7 +1742,7 @@ function start(manifest){
 }
 
 return {
-  start, loadBrief, reload, saveConfig, resetConfig, rebuild:function(){ rebuildStale(true); },
+  start, loadBrief, reload, saveConfig, resetConfig, hmPick, rebuild:function(){ rebuildStale(true); },
   setCh, toggleP, saveLog, saveDate,
   addTask, rmTask, addSubtask, toggleSubForm, toggleNew:function(id){ showNF = (showNF === id) ? null : id;
     NFBLOCK = (M.blocks||[]).find(b => secId(b.id || b.label) === id) || null; render(); },
