@@ -44,7 +44,7 @@
 window.DashCore = (function(){
 
 const API   = "https://api.github.com";
-const BUILD = "20260928-1200";
+const BUILD = "20260928-1300";
 
 let M        = null;     // manifest
 let REPO     = "";
@@ -261,7 +261,11 @@ function effBraindump(){
   return fromJ.concat(fromL).sort((a,b) => String(b.ts).localeCompare(String(a.ts)));
 }
 function effCreated(){
+  // Once the brief carries the issue a created entry became, the real card
+  // (dated, sorted, with done/»/⋯) is the one to show — not this placeholder.
+  const inBrief = new Set(((BRIEF && BRIEF.items) || []).map(i => i.number));
   const fromJ = (J ? J.created : []).filter(c => S.rm.indexOf(c.cid) === -1)
+                                    .filter(c => !(c.applied && c.applied.issue && inBrief.has(c.applied.issue)))
                                     .map(c => Object.assign({}, c, {queued:true}));
   const fromL = S.nt.map(c => Object.assign({}, c, {queued:false}));
   return fromJ.concat(fromL);
@@ -1509,8 +1513,16 @@ function renderBlock(b){
           + "<div class='pbtns' style='margin-top:8px'><button class='btn' onclick='DashCore.toggleNew(\""+sid+"\")'>Cancel</button>"
           + "<button class='btn btn-p' onclick='DashCore.addTask()'>Add</button></div></div>";
       }
-      h += list.map(card).join("");
-      h += created.map(newCard).join("");
+      // A task added here but not yet an issue sits where its date puts it,
+      // not at the end: before the first card due later than it.
+      const rows = list.map(i => ({due: eff(i.number).reminder || i.due || "9999", html: card(i)}));
+      created.forEach(function(t){
+        const due = t.due || "9999";
+        const at = rows.findIndex(r => r.due > due);
+        const row = {due: due, html: newCard(t)};
+        if(at === -1) rows.push(row); else rows.splice(at, 0, row);
+      });
+      h += rows.map(r => r.html).join("");
       if(!list.length && !created.length && !hidden.length)
         h += "<div class='rc-empty'>"+esc(txt(b.id+".empty", b.empty)||"Nothing here today.")+"</div>";
       if(hidden.length)
