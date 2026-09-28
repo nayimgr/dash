@@ -176,6 +176,8 @@
   .hm-k i{display:inline-block;width:10px;height:10px;border-radius:2px;font-style:normal}
   .hm-k i.hm-empty{background:var(--border)}
   .hm-note{color:var(--text-3);margin-left:auto}
+  .rd-field{font-size:10px;font-weight:600;letter-spacing:.05em;text-transform:uppercase;color:var(--text-3);margin:12px 0 6px}
+  .rd-field:first-child{margin-top:0}
   .cal-list{margin-bottom:4px}
   .cal-row{display:flex;align-items:baseline;gap:10px;padding:5px 0;border-bottom:1px solid var(--border);font-size:13px}
   .cal-row:last-child{border-bottom:none}

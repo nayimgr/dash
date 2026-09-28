@@ -44,7 +44,7 @@
 window.DashCore = (function(){
 
 const API   = "https://api.github.com";
-const BUILD = "20260928-1500";
+const BUILD = "20260928-1600";
 
 let M        = null;     // manifest
 let REPO     = "";
@@ -1550,7 +1550,12 @@ function renderBlock(b){
     const decided = all.filter(x => !!effRead(String(x.id)));
     const list    = hideSettled ? all.filter(x => !effRead(String(x.id))) : all;
     return section(L, function(){
-      let h = list.map(readingBlock).join("");
+      // Grouped under a small heading when the brief says which field each is in.
+      let h = "", last = null;
+      list.forEach(function(x){
+        if(x.field && x.field !== last){ h += "<div class='rd-field'>"+esc(x.field)+"</div>"; last = x.field; }
+        h += readingBlock(x);
+      });
       if(!list.length) h += "<div class='rc-empty'>All triaged.</div>";
       if(hideSettled && decided.length)
         h += "<div class='hidden-row'>"+decided.length+" triaged"
