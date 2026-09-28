@@ -44,7 +44,7 @@
 window.DashCore = (function(){
 
 const API   = "https://api.github.com";
-const BUILD = "20260928-1700";
+const BUILD = "20260928-1900";
 
 let M        = null;     // manifest
 let REPO     = "";
@@ -194,7 +194,7 @@ function loadLocal(){
 function saveLocal(){ lsSet(localKey(), JSON.stringify(S)); }
 
 // ── effective state: journal overlaid with local ─────────────────────────────
-const FIELDS = ["done","log","reminder","deadline"];
+const FIELDS = ["done","drop","log","reminder","deadline"];   // drop = won't do
 function jch(n){ return (J && J.changes[String(n)]) || {}; }
 function lch(n){ return S.ch[String(n)] || {}; }
 // An entry the Action has already written to the issue. Its fields are now part
@@ -208,7 +208,7 @@ function isReflected(item){
   if(!isApplied(j)) return false;
   if(j.reminder && dateOf(j.reminder) !== (item.due || "")) return false;
   if(j.deadline && dateOf(j.deadline) !== (item.deadline || "")) return false;
-  if(j.done) return false;
+  if(j.done || j.drop) return false;
   const l = lch(item.number);
   return !FIELDS.some(f => f in l);           // nothing newer on this device
 }
@@ -342,7 +342,7 @@ function setCh(n,p){
 // ── settled / collapsed / dismissed ──────────────────────────────────────────
 // Done, or re-dated to somewhere the brief hasn't put it yet. Once the brief
 // shows the new date, the card is simply where it belongs and is not hidden.
-function isSettled(item){ const c = eff(item.number); return !!(c.done || (c.reminder && dateOf(c.reminder) !== (item.due || ""))); }
+function isSettled(item){ const c = eff(item.number); return !!(c.done || c.drop || (c.reminder && dateOf(c.reminder) !== (item.due || ""))); }
 function settledCount(){ return BRIEF ? (BRIEF.items||[]).filter(isSettled).length : 0; }
 function toggleHide(){
   hideSettled = !hideSettled;
@@ -975,7 +975,8 @@ function renderModal(){
 // ── an issue card ────────────────────────────────────────────────────────────
 function card(item){
   const n = item.number, c = eff(n), l = lch(n), p = panels[n] || {};
-  const dd = dateOf(c.reminder, item.reminder || item.due), dcs = dc(dd), done = !!c.done;
+  const dropped = !!c.drop;
+  const dd = dateOf(c.reminder, item.reminder || item.due), dcs = dc(dd), done = !!c.done || dropped;
   const ddl = dateOf(c.deadline, item.deadline);
   const isTask = item.type === "task", isPerson = item.type === "person";
   const dlabel = isPerson ? M.dateField.person : M.dateField.default;
@@ -1051,14 +1052,14 @@ function card(item){
     const open = !!p.more;
     return "<div class='card compact "+dcs+(done?" done":"")+(star?" starred":"")+(applied?" applied":"")+"'>"
       + "<div class='card-row'>"
-      + (isTask ? "<button class='act chk"+(done?" on-green":"")+"' onclick='DashCore.setCh("+n+",{done:"+(!done)+"})' title='"+(done?"Undo":"Done")+"'>"+IC.check+"</button>" : "")
+      + (isTask ? "<button class='act chk"+(c.done?" on-green":"")+"' onclick='DashCore.setCh("+n+",{done:"+(!done)+",drop:false})' title='"+(done?"Undo":"Done")+"'>"+IC.check+"</button>" : "")
       // `undated` items (a reading list) are never given a date from here.
       + (isTask && !done && !item.undated && dd !== tomorrow() || l.reminder === tomorrow()
           ? "<button class='act chk tmrw"+(l.reminder===tomorrow()?" on":"")+"' onclick='DashCore.toTomorrow("+n+")' title='"+(l.reminder===tomorrow()?"Undo — back to "+esc(fd(item.due)||"no date"):"Move to tomorrow")+"'>"+IC.tmrw+"</button>" : "")
       + "<span class='card-title"+(done?" struck":"")+"'>"+esc(item.title)+"</span>"
       + (dd ? dueChip(dd, tick) : "")
       + "<button class='act more"+(open?" on":"")+"' onclick='DashCore.toggleMore("+n+")' title='More'>"+IC.more+"</button></div>"
-      + ((status || c.log) && !open ? "<div class='card-meta'>"+(c.log?"<span class='chip logged'>"+IC.msg+" note</span>":"")+status+"</div>" : "")
+      + ((status || c.log || dropped) && !open ? "<div class='card-meta'>"+(dropped?"<span class='chip dropped'>won't do</span>":"")+(c.log?"<span class='chip logged'>"+IC.msg+" note</span>":"")+status+"</div>" : "")
       + (open ? "<div class='more-panel'><div class='card-meta'>" + ttag(item.topic)
           + (ddl?"<span class='chip dl "+dc(ddl)+"'>deadline "+fd(ddl)+(c.deadline && !reflected?" ✓":"")+"</span>":"")
           + (c.log?"<span class='chip logged'>"+IC.msg+" note</span>":"") + status + "</div>"
@@ -1069,6 +1070,7 @@ function card(item){
           + "<button class='act"+(p.date?" on":"")+"' onclick='DashCore.toggleP("+n+",\"date\")' title='"+esc(dlabel)+"'>"+IC.cal+"</button>"
           + (item.link?"<a class='act' href='"+esc(item.link)+"' target='_blank' rel='noopener' title='Open link'>"+IC.link+"</a>":"")
           + (item.url?"<a class='act' href='"+esc(item.url)+"' target='_blank' rel='noopener' title='GitHub'>"+IC.ext+"</a>":"")
+          + (isTask ? "<button class='act wide"+(dropped?" on":"")+"' onclick='DashCore.setCh("+n+",{drop:"+(!dropped)+",done:false})' title='Not doing it — closes as not planned, not as done'>"+(dropped?"undo won't do":"won't do")+"</button>" : "")
           + "</div>" + subHtml + "</div>" : "")
       + panelsHtml(n, c, p, dd, ddl, dlabel)
       + "</div>";
@@ -1380,18 +1382,30 @@ function section(label, bodyFn, opts){
 // Seven cells, one per day, straight from `BRIEF.week`. The brief decides what a
 // day holds and whether it happened (`done`: true / false / null); this only
 // draws it. `extra` marks something done that the plan did not ask for.
+let WKOPEN = {};           // days whose "+N more" is open
+function wkMore(date){ WKOPEN[date] = !WKOPEN[date]; render(); }
 function weekStrip(week){
   return "<div class='week' role='list' aria-label='"+esc(txt("week","Week"))+"'>" + week.map(function(w){
     const day = String(w.date||"").split("-")[2] || "";
+    // An item that names an issue disappears as soon as it's ticked or dropped here.
+    let items = (w.items||[]).filter(function(it){
+      if(!it.number) return true;
+      const c = eff(it.number);
+      return !(c.done || c.drop);
+    });
+    const max = w.max || 0, extra = (max && items.length > max + 1) ? items.length - max : 0;
+    const shown = (extra && !WKOPEN[w.date]) ? items.slice(0, max) : items;
     return "<div class='wk-day"+(w.today?" today":"")+"' role='listitem'>"
       + "<div class='wk-h'><span class='wk-n'>"+esc(w.day||"")+"</span><span class='wk-d'>"+esc(day.replace(/^0/,""))+"</span></div>"
-      + "<div class='wk-its'>" + (w.items||[]).map(function(it){
+      + "<div class='wk-its'>" + shown.map(function(it){
           const st = it.done === true ? " done" : it.done === false ? " missed" : "";
           return "<div class='wk-it tag "+tclass(it.topic)+st+(it.extra?" extra":"")+(it.warn?" warn":"")+"'"
             + (it.done === false ? " title='not logged'" : it.extra ? " title='not in the plan'" : "")+">"
             + (it.done === true ? IC.check : "") + "<span>"+esc(it.text||"")+"</span></div>";
-        }).join("") + "</div>"
-      + "</div>";
+        }).join("")
+      + (extra ? "<button class='wk-it tag t0 wk-more' onclick='DashCore.wkMore(\""+esc(w.date)+"\")'>"
+                 + (WKOPEN[w.date] ? "show less" : "+"+extra+" more") + "</button>" : "")
+      + "</div></div>";
   }).join("") + "</div>";
 }
 
@@ -1837,7 +1851,7 @@ function start(manifest){
 }
 
 return {
-  start, loadBrief, reload, saveConfig, resetConfig, hmPick, rebuild:function(){ rebuildStale(true); },
+  start, loadBrief, reload, saveConfig, resetConfig, hmPick, wkMore, rebuild:function(){ rebuildStale(true); },
   setCh, toggleP, saveLog, saveDate,
   addTask, rmTask, addSubtask, toggleSubForm, toggleNew:function(id){ showNF = (showNF === id) ? null : id;
     NFBLOCK = (M.blocks||[]).find(b => secId(b.id || b.label) === id) || null; render(); },

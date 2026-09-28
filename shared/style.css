@@ -115,6 +115,9 @@
   .card.compact .act.tmrw.on{color:var(--accent);border-color:var(--accent)}
   .card.compact .act.more{border-color:transparent;width:24px;height:24px}
   .card.compact .act.more.on{border-color:var(--border)}
+  .act.wide{width:auto;padding:0 8px;font-size:11px;margin-left:auto}
+  .act.wide.on{color:var(--danger);border-color:var(--danger)}
+  .chip.dropped{background:var(--surface2);color:var(--text-3);text-decoration:line-through}
   .more-panel{margin-top:6px;padding-top:6px;border-top:1px dashed var(--border)}
   .more-panel .acts{margin-top:8px}
 
@@ -149,6 +152,7 @@
   .wk-it{display:inline-flex;align-items:center;gap:3px;font-size:11.5px;line-height:1.3;padding:1px 7px;border-radius:6px}
   .wk-it svg{flex-shrink:0;width:10px;height:10px}
   .wk-it.missed{opacity:.45;text-decoration:line-through}
+  .wk-more{border:none;cursor:pointer;font:inherit}
   .wk-it.warn{background:var(--danger-bg);color:var(--danger)}
   .wk-it.extra{background:transparent;outline:1px dashed currentColor;outline-offset:-1px}
   .wk-day.today{background:var(--accent-bg);margin:0 -10px;padding:4px 10px}

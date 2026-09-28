@@ -87,7 +87,8 @@ Everything is optional except `date`. An empty block does not render.
   // optional: a strip under the header, one cell per day (usually Mon–Sun)
   "week": [
     { "day": "…", "date": "2026-01-12", "today": false,
-      "items": [ { "text": "short label", "topic": "alpha",
+      "max": 4,                          // show this many; "+N more" opens the rest
+      "items": [ { "text": "short label", "topic": "alpha", "number": 12,  // hidden once done/dropped here
                    "done": true,          // true ✓ · false struck through · null nothing yet
                    "extra": false } ] }   // dashed: happened, but the plan didn't ask for it
   ],
@@ -154,6 +155,7 @@ Created empty each morning. The dashboard appends; a workflow applies and
     "103": { "done": true, "log": "…",
              "applied": { "at": "…", "ops": ["comment", "closed"] } },
     "82":  { "log": "…", "reminder": "2026-01-22" }   // no `applied` = still queued
+    // "drop": true = won't do: closed as not planned, never counted as done
     // "reminder": "none" / "deadline": "none" = clear that date (a blank 📅 line)
   },
 
