@@ -44,7 +44,7 @@
 window.DashCore = (function(){
 
 const API   = "https://api.github.com";
-const BUILD = "20260928-1100";
+const BUILD = "20260928-1200";
 
 let M        = null;     // manifest
 let REPO     = "";
@@ -200,6 +200,18 @@ function lch(n){ return S.ch[String(n)] || {}; }
 // An entry the Action has already written to the issue. Its fields are now part
 // of reality, so they still display — but they must never be re-sent.
 function isApplied(e){ return !!(e && e.applied); }
+// Applied AND already visible in the brief: the re-date shows as the item's own
+// date, so there is nothing left to confirm. (A closed issue drops out of the
+// brief; a comment can't be seen in it, so a note keeps its small chip.)
+function isReflected(item){
+  const j = jch(item.number);
+  if(!isApplied(j)) return false;
+  if(j.reminder && j.reminder !== item.due) return false;
+  if(j.deadline && j.deadline !== (item.deadline || "")) return false;
+  if(j.done) return false;
+  const l = lch(item.number);
+  return !FIELDS.some(f => f in l);           // nothing newer on this device
+}
 function eff(n){
   const out = Object.assign({}, jch(n));
   delete out.applied;
@@ -319,7 +331,9 @@ function setCh(n,p){
 }
 
 // ── settled / collapsed / dismissed ──────────────────────────────────────────
-function isSettled(item){ const c = eff(item.number); return !!(c.done || c.reminder); }
+// Done, or re-dated to somewhere the brief hasn't put it yet. Once the brief
+// shows the new date, the card is simply where it belongs and is not hidden.
+function isSettled(item){ const c = eff(item.number); return !!(c.done || (c.reminder && c.reminder !== item.due)); }
 function settledCount(){ return BRIEF ? (BRIEF.items||[]).filter(isSettled).length : 0; }
 function toggleHide(){
   hideSettled = !hideSettled;
@@ -950,7 +964,8 @@ function card(item){
   const ddl = c.deadline || item.deadline;
   const isTask = item.type === "task", isPerson = item.type === "person";
   const dlabel = isPerson ? M.dateField.person : M.dateField.default;
-  const applied = isApplied(jch(n));
+  const reflected = isReflected(item);
+  const applied = isApplied(jch(n)) && !reflected;
   // Is any part of this card's state still only on this device?
   const unsaved = FIELDS.some(function(f){
     if(!(f in l)) return false;
@@ -1013,7 +1028,9 @@ function card(item){
 
   const status = unsaved ? "<span class='chip unsaved'>unsaved</span>"
                : applied ? "<span class='chip applied'>applied</span>"
+               : reflected ? ""
                : (Object.keys(c).length ? "<span class='chip queued'>queued</span>" : "");
+  const tick = (c.reminder && !reflected) ? " ✓" : "";
   if(M.compactCards){
     // Compact: done + title + due chip; everything else behind "⋯".
     const open = !!p.more;
@@ -1021,14 +1038,14 @@ function card(item){
       + "<div class='card-row'>"
       + (isTask ? "<button class='act chk"+(done?" on-green":"")+"' onclick='DashCore.setCh("+n+",{done:"+(!done)+"})' title='"+(done?"Undo":"Done")+"'>"+IC.check+"</button>" : "")
       // `undated` items (a reading list) are never given a date from here.
-      + (isTask && !done && !item.undated && dd !== tomorrow() || c.reminder === tomorrow()
-          ? "<button class='act chk tmrw"+(c.reminder===tomorrow()?" on":"")+"' onclick='DashCore.toTomorrow("+n+")' title='"+(c.reminder===tomorrow()?"Undo — back to "+esc(fd(item.due)||"no date"):"Move to tomorrow")+"'>"+IC.tmrw+"</button>" : "")
+      + (isTask && !done && !item.undated && dd !== tomorrow() || l.reminder === tomorrow()
+          ? "<button class='act chk tmrw"+(l.reminder===tomorrow()?" on":"")+"' onclick='DashCore.toTomorrow("+n+")' title='"+(l.reminder===tomorrow()?"Undo — back to "+esc(fd(item.due)||"no date"):"Move to tomorrow")+"'>"+IC.tmrw+"</button>" : "")
       + "<span class='card-title"+(done?" struck":"")+"'>"+esc(item.title)+"</span>"
-      + (dd ? dueChip(dd, c.reminder?" ✓":"") : "")
+      + (dd ? dueChip(dd, tick) : "")
       + "<button class='act more"+(open?" on":"")+"' onclick='DashCore.toggleMore("+n+")' title='More'>"+IC.more+"</button></div>"
       + ((status || c.log) && !open ? "<div class='card-meta'>"+(c.log?"<span class='chip logged'>"+IC.msg+" note</span>":"")+status+"</div>" : "")
       + (open ? "<div class='more-panel'><div class='card-meta'>" + ttag(item.topic)
-          + (ddl?"<span class='chip dl "+dc(ddl)+"'>deadline "+fd(ddl)+(c.deadline?" ✓":"")+"</span>":"")
+          + (ddl?"<span class='chip dl "+dc(ddl)+"'>deadline "+fd(ddl)+(c.deadline && !reflected?" ✓":"")+"</span>":"")
           + (c.log?"<span class='chip logged'>"+IC.msg+" note</span>":"") + status + "</div>"
           + (item.note?"<div class='cnote'>"+esc(item.note)+"</div>":"")
           + "<div class='acts'>"
@@ -1051,8 +1068,8 @@ function card(item){
     + (item.link?"<a class='act' href='"+esc(item.link)+"' target='_blank' rel='noopener' title='Open link'>"+IC.link+"</a>":"")
     + (item.url?"<a class='act' href='"+esc(item.url)+"' target='_blank' rel='noopener' title='GitHub'>"+IC.ext+"</a>":"")
     + "</div></div><div class='card-meta'>" + ttag(item.topic)
-    + (dd ? dueChip(dd, c.reminder?" ✓":"") : "")
-    + (ddl?"<span class='chip dl "+dc(ddl)+"'>deadline "+fd(ddl)+(c.deadline?" ✓":"")+"</span>":"")
+    + (dd ? dueChip(dd, tick) : "")
+    + (ddl?"<span class='chip dl "+dc(ddl)+"'>deadline "+fd(ddl)+(c.deadline && !reflected?" ✓":"")+"</span>":"")
     + (c.log?"<span class='chip logged'>"+IC.msg+" note</span>":"")
     + (unsaved ? "<span class='chip unsaved'>unsaved</span>"
                : applied ? "<span class='chip applied'>applied</span>"
@@ -1497,7 +1514,7 @@ function renderBlock(b){
       if(!list.length && !created.length && !hidden.length)
         h += "<div class='rc-empty'>"+esc(txt(b.id+".empty", b.empty)||"Nothing here today.")+"</div>";
       if(hidden.length)
-        h += "<div class='hidden-row'>"+hidden.length+" hidden until applied"
+        h += "<div class='hidden-row'>"+hidden.length+" done or moved"
            + " <button class='lnk' onclick='DashCore.toggleHide()'>show</button></div>";
       return h;
     }, {add:add, collapsed:!!b.collapsed, note:(b.count && list.length) ? String(list.length) : txt(b.id+".note", b.note)});
