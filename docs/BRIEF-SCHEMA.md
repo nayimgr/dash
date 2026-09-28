@@ -154,6 +154,7 @@ Created empty each morning. The dashboard appends; a workflow applies and
     "103": { "done": true, "log": "…",
              "applied": { "at": "…", "ops": ["comment", "closed"] } },
     "82":  { "log": "…", "reminder": "2026-01-22" }   // no `applied` = still queued
+    // "reminder": "none" / "deadline": "none" = clear that date (a blank 📅 line)
   },
 
   "created": [

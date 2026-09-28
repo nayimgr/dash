@@ -44,7 +44,7 @@
 window.DashCore = (function(){
 
 const API   = "https://api.github.com";
-const BUILD = "20260928-1300";
+const BUILD = "20260928-1400";
 
 let M        = null;     // manifest
 let REPO     = "";
@@ -206,8 +206,8 @@ function isApplied(e){ return !!(e && e.applied); }
 function isReflected(item){
   const j = jch(item.number);
   if(!isApplied(j)) return false;
-  if(j.reminder && j.reminder !== item.due) return false;
-  if(j.deadline && j.deadline !== (item.deadline || "")) return false;
+  if(j.reminder && dateOf(j.reminder) !== (item.due || "")) return false;
+  if(j.deadline && dateOf(j.deadline) !== (item.deadline || "")) return false;
   if(j.done) return false;
   const l = lch(item.number);
   return !FIELDS.some(f => f in l);           // nothing newer on this device
@@ -337,7 +337,7 @@ function setCh(n,p){
 // ── settled / collapsed / dismissed ──────────────────────────────────────────
 // Done, or re-dated to somewhere the brief hasn't put it yet. Once the brief
 // shows the new date, the card is simply where it belongs and is not hidden.
-function isSettled(item){ const c = eff(item.number); return !!(c.done || (c.reminder && c.reminder !== item.due)); }
+function isSettled(item){ const c = eff(item.number); return !!(c.done || (c.reminder && dateOf(c.reminder) !== (item.due || ""))); }
 function settledCount(){ return BRIEF ? (BRIEF.items||[]).filter(isSettled).length : 0; }
 function toggleHide(){
   hideSettled = !hideSettled;
@@ -905,11 +905,17 @@ function toTomorrow(n){
   const t = tomorrow(), l = lch(String(n));
   setCh(n, {reminder: l.reminder === t ? false : t});
 }
+// An emptied field on an item that has a date means "clear it": sent as
+// "none", which the applier writes as a blank 📅 line. Same as the brief's
+// value means "no change".
 function saveDate(n){
   const rv = document.getElementById("dt-"+n).value;
   const dv = document.getElementById("dl-"+n).value;
-  panels[n] = {}; setCh(n,{reminder: rv || false, deadline: dv || false});
+  const it = (BRIEF.items || []).find(i => i.number === n) || {};
+  const pick = (v, cur) => v ? (v === cur ? false : v) : (cur ? "none" : false);
+  panels[n] = {}; setCh(n,{reminder: pick(rv, it.due || ""), deadline: pick(dv, it.deadline || "")});
 }
+function dateOf(v, fallback){ return v === "none" ? "" : (v || fallback || ""); }
 
 // ── config ───────────────────────────────────────────────────────────────────
 function saveConfig(){
@@ -964,8 +970,8 @@ function renderModal(){
 // ── an issue card ────────────────────────────────────────────────────────────
 function card(item){
   const n = item.number, c = eff(n), l = lch(n), p = panels[n] || {};
-  const dd = c.reminder || item.reminder || item.due, dcs = dc(dd), done = !!c.done;
-  const ddl = c.deadline || item.deadline;
+  const dd = dateOf(c.reminder, item.reminder || item.due), dcs = dc(dd), done = !!c.done;
+  const ddl = dateOf(c.deadline, item.deadline);
   const isTask = item.type === "task", isPerson = item.type === "person";
   const dlabel = isPerson ? M.dateField.person : M.dateField.default;
   const reflected = isReflected(item);
@@ -1515,7 +1521,7 @@ function renderBlock(b){
       }
       // A task added here but not yet an issue sits where its date puts it,
       // not at the end: before the first card due later than it.
-      const rows = list.map(i => ({due: eff(i.number).reminder || i.due || "9999", html: card(i)}));
+      const rows = list.map(i => ({due: dateOf(eff(i.number).reminder, i.due) || "9999", html: card(i)}));
       created.forEach(function(t){
         const due = t.due || "9999";
         const at = rows.findIndex(r => r.due > due);
