@@ -44,7 +44,7 @@
 window.DashCore = (function(){
 
 const API   = "https://api.github.com";
-const BUILD = "20260928-1600";
+const BUILD = "20260928-1700";
 
 let M        = null;     // manifest
 let REPO     = "";
@@ -263,9 +263,14 @@ function effBraindump(){
 function effCreated(){
   // Once the brief carries the issue a created entry became, the real card
   // (dated, sorted, with done/»/⋯) is the one to show — not this placeholder.
+  // Also once the brief was built after the issue was created: if it isn't in
+  // there, it was closed (done) — the placeholder must not come back.
   const inBrief = new Set(((BRIEF && BRIEF.items) || []).map(i => i.number));
+  const built = Date.parse((BRIEF && BRIEF.generated) || "") || 0;
+  const landed = c => c.applied && c.applied.issue &&
+                      (inBrief.has(c.applied.issue) || built >= (Date.parse(c.applied.at || "") || Infinity));
   const fromJ = (J ? J.created : []).filter(c => S.rm.indexOf(c.cid) === -1)
-                                    .filter(c => !(c.applied && c.applied.issue && inBrief.has(c.applied.issue)))
+                                    .filter(c => !landed(c))
                                     .map(c => Object.assign({}, c, {queued:true}));
   const fromL = S.nt.map(c => Object.assign({}, c, {queued:false}));
   return fromJ.concat(fromL);
