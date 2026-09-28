@@ -44,7 +44,7 @@
 window.DashCore = (function(){
 
 const API   = "https://api.github.com";
-const BUILD = "20260928-1000";
+const BUILD = "20260928-1100";
 
 let M        = null;     // manifest
 let REPO     = "";
@@ -102,6 +102,7 @@ const IC = {
   msg:`<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>`,
   cal:`<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>`,
   link:`<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>`,
+  tmrw:`<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><polyline points="13 17 18 12 13 7"/><polyline points="6 17 11 12 6 7"/></svg>`,
   more:`<svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><circle cx="5" cy="12" r="1.8"/><circle cx="12" cy="12" r="1.8"/><circle cx="19" cy="12" r="1.8"/></svg>`,
   ext:`<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>`,
   x:`<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>`,
@@ -126,12 +127,13 @@ const IC = {
 
 // ── helpers ──────────────────────────────────────────────────────────────────
 function esc(s){ return String(s==null?"":s).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c])); }
-function dc(d){ if(!d) return ""; if(d<TODAY) return "overdue"; if(d===TODAY) return "today"; return ""; }
+function dc(d){ if(!d) return ""; if(d<TODAY) return "overdue"; if(d===TODAY) return "today"; if(d===tomorrow()) return "tomorrow"; return ""; }
 function fd(d){ if(!d) return ""; const p=String(d).split("-"); return p[2]+"/"+p[1]; }
-// A due-date chip: "Today" for today (the date adds nothing), else overdue · dd/mm or dd/mm.
+// A due-date chip: "Today" / "Tomorrow" (the date adds nothing), else overdue · dd/mm or dd/mm.
 function dueChip(dd, extra){
   const k = dc(dd);
-  return "<span class='chip "+k+"'>"+(k==="today" ? "Today" : (k==="overdue" ? "overdue · " : "")+fd(dd))+(extra||"")+"</span>";
+  const word = k==="today" ? "Today" : k==="tomorrow" ? "Tomorrow" : (k==="overdue" ? "overdue · " : "")+fd(dd);
+  return "<span class='chip "+k+"'>"+word+(extra||"")+"</span>";
 }
 function hhmm(d){ return d.toLocaleTimeString("en-GB",{hour:"2-digit",minute:"2-digit"}); }
 // Topic chips are styled by class, not inline hex, so they follow the theme.
@@ -878,6 +880,13 @@ function saveLog(n){
   const v = document.getElementById("lt-"+n).value.trim();
   panels[n] = {}; setCh(n,{log: v || false});
 }
+// The most common re-date: push to tomorrow (local), from wherever it was due.
+// Pressed again before Save, it undoes itself.
+function tomorrow(){ const d = new Date(); d.setDate(d.getDate() + 1); return localDate(d); }
+function toTomorrow(n){
+  const t = tomorrow(), l = lch(String(n));
+  setCh(n, {reminder: l.reminder === t ? false : t});
+}
 function saveDate(n){
   const rv = document.getElementById("dt-"+n).value;
   const dv = document.getElementById("dl-"+n).value;
@@ -1011,6 +1020,9 @@ function card(item){
     return "<div class='card compact "+dcs+(done?" done":"")+(star?" starred":"")+(applied?" applied":"")+"'>"
       + "<div class='card-row'>"
       + (isTask ? "<button class='act chk"+(done?" on-green":"")+"' onclick='DashCore.setCh("+n+",{done:"+(!done)+"})' title='"+(done?"Undo":"Done")+"'>"+IC.check+"</button>" : "")
+      // `undated` items (a reading list) are never given a date from here.
+      + (isTask && !done && !item.undated && dd !== tomorrow() || c.reminder === tomorrow()
+          ? "<button class='act chk tmrw"+(c.reminder===tomorrow()?" on":"")+"' onclick='DashCore.toTomorrow("+n+")' title='"+(c.reminder===tomorrow()?"Undo — back to "+esc(fd(item.due)||"no date"):"Move to tomorrow")+"'>"+IC.tmrw+"</button>" : "")
       + "<span class='card-title"+(done?" struck":"")+"'>"+esc(item.title)+"</span>"
       + (dd ? dueChip(dd, c.reminder?" ✓":"") : "")
       + "<button class='act more"+(open?" on":"")+"' onclick='DashCore.toggleMore("+n+")' title='More'>"+IC.more+"</button></div>"
@@ -1112,7 +1124,7 @@ function projectBlock(p){
     + (pct !== null ? "<div class='pj-bar'><i style='width:"+pct+"%'></i></div>" : "")
     + "<div class='pj-meta'>"
     + ttag(p.topic)
-    + (p.nextDue ? "<span class='chip "+dc(p.nextDue)+"'>"+(dc(p.nextDue)==="overdue"?"overdue · ":"")+fd(p.nextDue)+"</span>" : "")
+    + (p.nextDue ? dueChip(p.nextDue) : "")
     + (p.openTasks ? "<span class='chip'>"+p.openTasks+" open</span>" : "")
     + "</div>"
     + (quiet !== null && quiet >= 7
@@ -1789,6 +1801,6 @@ return {
   dismissInbox, toggleIB, convertInbox,
   keepRead, dismissRead, togglePP, toggleAbs, readToTask,
   setReading, toggleCheck, pickForm:function(id){ if(FORMSEL) readForm(FORMSEL); FORMSEL = id; render(); }, pickChoice, readForm, addEntry, rmEntry, doUpload,
-  toggleStar, toggleMore, push, toggleHide, toggleSection, dismissWarn, closeModal
+  toggleStar, toggleMore, toTomorrow, push, toggleHide, toggleSection, dismissWarn, closeModal
 };
 })();

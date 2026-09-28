@@ -202,9 +202,10 @@ unmarked, so a re-run picks it up.
 
 ## Manifest switches worth knowing
 
-`compactCards: true` — an item card is one row: done, title, due chip ("Today"
-for today, "overdue · dd/mm", or dd/mm) and "⋯", which opens the topic, the
-deadline, the note and the other actions. `subtasks: false` hides the subtask
+`compactCards: true` — an item card is one row: done, "»" (move to tomorrow;
+pressed again before Save, it undoes), title, due chip ("Today", "Tomorrow",
+"overdue · dd/mm", or dd/mm) and "⋯", which opens the topic, the deadline, the
+note and the other actions. An item with `"undated": true` gets no "»". `subtasks: false` hides the subtask
 button. Per block: `collapsed`, `count`, `undated`, `allowNew`.
 
 ## Two rules that hold the whole thing up
