@@ -44,7 +44,7 @@
 window.DashCore = (function(){
 
 const API   = "https://api.github.com";
-const BUILD = "20260928-1400";
+const BUILD = "20260928-1500";
 
 let M        = null;     // manifest
 let REPO     = "";
@@ -1382,7 +1382,7 @@ function weekStrip(week){
       + "<div class='wk-h'><span class='wk-n'>"+esc(w.day||"")+"</span><span class='wk-d'>"+esc(day.replace(/^0/,""))+"</span></div>"
       + "<div class='wk-its'>" + (w.items||[]).map(function(it){
           const st = it.done === true ? " done" : it.done === false ? " missed" : "";
-          return "<div class='wk-it tag "+tclass(it.topic)+st+(it.extra?" extra":"")+"'"
+          return "<div class='wk-it tag "+tclass(it.topic)+st+(it.extra?" extra":"")+(it.warn?" warn":"")+"'"
             + (it.done === false ? " title='not logged'" : it.extra ? " title='not in the plan'" : "")+">"
             + (it.done === true ? IC.check : "") + "<span>"+esc(it.text||"")+"</span></div>";
         }).join("") + "</div>"
