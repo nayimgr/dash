@@ -44,7 +44,7 @@
 window.DashCore = (function(){
 
 const API   = "https://api.github.com";
-const BUILD = "20260928-0030";
+const BUILD = "20260928-1000";
 
 let M        = null;     // manifest
 let REPO     = "";
@@ -102,6 +102,7 @@ const IC = {
   msg:`<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>`,
   cal:`<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>`,
   link:`<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>`,
+  more:`<svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><circle cx="5" cy="12" r="1.8"/><circle cx="12" cy="12" r="1.8"/><circle cx="19" cy="12" r="1.8"/></svg>`,
   ext:`<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>`,
   x:`<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>`,
   plus:`<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>`,
@@ -127,6 +128,11 @@ const IC = {
 function esc(s){ return String(s==null?"":s).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c])); }
 function dc(d){ if(!d) return ""; if(d<TODAY) return "overdue"; if(d===TODAY) return "today"; return ""; }
 function fd(d){ if(!d) return ""; const p=String(d).split("-"); return p[2]+"/"+p[1]; }
+// A due-date chip: "Today" for today (the date adds nothing), else overdue · dd/mm or dd/mm.
+function dueChip(dd, extra){
+  const k = dc(dd);
+  return "<span class='chip "+k+"'>"+(k==="today" ? "Today" : (k==="overdue" ? "overdue · " : "")+fd(dd))+(extra||"")+"</span>";
+}
 function hhmm(d){ return d.toLocaleTimeString("en-GB",{hour:"2-digit",minute:"2-digit"}); }
 // Topic chips are styled by class, not inline hex, so they follow the theme.
 // The engine carries no vocabulary of its own: a chip's colour is a numbered
@@ -862,9 +868,10 @@ async function doUpload(uid_){
 }
 
 // ── issue panels ─────────────────────────────────────────────────────────────
+function toggleMore(n){ const cur = panels[n] || {}; panels[n] = Object.assign({}, cur, {more: !cur.more}); render(); }
 function toggleP(n,w){
   const cur = panels[n] || {};
-  panels[n] = {log:false, date:false}; panels[n][w] = !cur[w];
+  panels[n] = {log:false, date:false, more:cur.more}; panels[n][w] = !cur[w];
   render();
 }
 function saveLog(n){
@@ -995,6 +1002,34 @@ function card(item){
     return h;
   })();
 
+  const status = unsaved ? "<span class='chip unsaved'>unsaved</span>"
+               : applied ? "<span class='chip applied'>applied</span>"
+               : (Object.keys(c).length ? "<span class='chip queued'>queued</span>" : "");
+  if(M.compactCards){
+    // Compact: done + title + due chip; everything else behind "⋯".
+    const open = !!p.more;
+    return "<div class='card compact "+dcs+(done?" done":"")+(star?" starred":"")+(applied?" applied":"")+"'>"
+      + "<div class='card-row'>"
+      + (isTask ? "<button class='act chk"+(done?" on-green":"")+"' onclick='DashCore.setCh("+n+",{done:"+(!done)+"})' title='"+(done?"Undo":"Done")+"'>"+IC.check+"</button>" : "")
+      + "<span class='card-title"+(done?" struck":"")+"'>"+esc(item.title)+"</span>"
+      + (dd ? dueChip(dd, c.reminder?" ✓":"") : "")
+      + "<button class='act more"+(open?" on":"")+"' onclick='DashCore.toggleMore("+n+")' title='More'>"+IC.more+"</button></div>"
+      + ((status || c.log) && !open ? "<div class='card-meta'>"+(c.log?"<span class='chip logged'>"+IC.msg+" note</span>":"")+status+"</div>" : "")
+      + (open ? "<div class='more-panel'><div class='card-meta'>" + ttag(item.topic)
+          + (ddl?"<span class='chip dl "+dc(ddl)+"'>deadline "+fd(ddl)+(c.deadline?" ✓":"")+"</span>":"")
+          + (c.log?"<span class='chip logged'>"+IC.msg+" note</span>":"") + status + "</div>"
+          + (item.note?"<div class='cnote'>"+esc(item.note)+"</div>":"")
+          + "<div class='acts'>"
+          + "<button class='act"+(star?" on-star":"")+"' onclick='DashCore.toggleStar("+n+")' title='"+(star?"Unstar":"Star — what I'm on right now")+"'>"+(star?IC.starOn:IC.star)+"</button>"
+          + "<button class='act"+(p.log?" on":"")+(c.log&&!p.log?" on-green":"")+"' onclick='DashCore.toggleP("+n+",\"log\")' title='Log a note'>"+IC.msg+"</button>"
+          + "<button class='act"+(p.date?" on":"")+"' onclick='DashCore.toggleP("+n+",\"date\")' title='"+esc(dlabel)+"'>"+IC.cal+"</button>"
+          + (item.link?"<a class='act' href='"+esc(item.link)+"' target='_blank' rel='noopener' title='Open link'>"+IC.link+"</a>":"")
+          + (item.url?"<a class='act' href='"+esc(item.url)+"' target='_blank' rel='noopener' title='GitHub'>"+IC.ext+"</a>":"")
+          + "</div>" + subHtml + "</div>" : "")
+      + panelsHtml(n, c, p, dd, ddl, dlabel)
+      + "</div>";
+  }
+
   return "<div class='card "+dcs+(done?" done":"")+(star?" starred":"")+(applied?" applied":"")+"'>"
     + "<div class='card-row'><span class='card-title"+(done?" struck":"")+"'>"+esc(item.title)+"</span><div class='acts'>"
     + "<button class='act"+(star?" on-star":"")+"' onclick='DashCore.toggleStar("+n+")' title='"+(star?"Unstar":"Star — what I'm on right now")+"'>"+(star?IC.starOn:IC.star)+"</button>"
@@ -1004,7 +1039,7 @@ function card(item){
     + (item.link?"<a class='act' href='"+esc(item.link)+"' target='_blank' rel='noopener' title='Open link'>"+IC.link+"</a>":"")
     + (item.url?"<a class='act' href='"+esc(item.url)+"' target='_blank' rel='noopener' title='GitHub'>"+IC.ext+"</a>":"")
     + "</div></div><div class='card-meta'>" + ttag(item.topic)
-    + (dd?"<span class='chip "+dcs+"'>"+(dcs==="overdue"?"overdue · ":"")+fd(dd)+(c.reminder?" ✓":"")+"</span>":"")
+    + (dd ? dueChip(dd, c.reminder?" ✓":"") : "")
     + (ddl?"<span class='chip dl "+dc(ddl)+"'>deadline "+fd(ddl)+(c.deadline?" ✓":"")+"</span>":"")
     + (c.log?"<span class='chip logged'>"+IC.msg+" note</span>":"")
     + (unsaved ? "<span class='chip unsaved'>unsaved</span>"
@@ -1013,15 +1048,18 @@ function card(item){
     + "</div>"
     + (item.note?"<div class='cnote'>"+esc(item.note)+"</div>":"")
     + subHtml
-    + (p.log?"<div class='panel'><textarea id='lt-"+n+"' placeholder='Note…'>"+esc(c.log||"")+"</textarea>"
+    + panelsHtml(n, c, p, dd, ddl, dlabel)
+    + "</div>";
+}
+function panelsHtml(n, c, p, dd, ddl, dlabel){
+  return (p.log?"<div class='panel'><textarea id='lt-"+n+"' placeholder='Note…'>"+esc(c.log||"")+"</textarea>"
        + "<div class='pbtns'><button class='btn' onclick='DashCore.toggleP("+n+",\"log\")'>Cancel</button>"
        + "<button class='btn btn-p' onclick='DashCore.saveLog("+n+")'>Save</button></div></div>":"")
     + (p.date?"<div class='panel'><div class='grid' style='display:grid;grid-template-columns:1fr 1fr;gap:8px'>"
        + "<div class='field'><label>"+esc(dlabel)+"</label><input type='date' id='dt-"+n+"' value='"+(dd||"")+"'></div>"
        + "<div class='field'><label>Deadline</label><input type='date' id='dl-"+n+"' value='"+(ddl||"")+"'></div></div>"
        + "<div class='pbtns'><button class='btn' onclick='DashCore.toggleP("+n+",\"date\")'>Cancel</button>"
-       + "<button class='btn btn-p' onclick='DashCore.saveDate("+n+")'>Set</button></div></div>":"")
-    + "</div>";
+       + "<button class='btn btn-p' onclick='DashCore.saveDate("+n+")'>Set</button></div></div>":"");
 }
 
 // ── a queued/created task that has no issue number yet ───────────────────────
@@ -1751,6 +1789,6 @@ return {
   dismissInbox, toggleIB, convertInbox,
   keepRead, dismissRead, togglePP, toggleAbs, readToTask,
   setReading, toggleCheck, pickForm:function(id){ if(FORMSEL) readForm(FORMSEL); FORMSEL = id; render(); }, pickChoice, readForm, addEntry, rmEntry, doUpload,
-  toggleStar, push, toggleHide, toggleSection, dismissWarn, closeModal
+  toggleStar, toggleMore, push, toggleHide, toggleSection, dismissWarn, closeModal
 };
 })();

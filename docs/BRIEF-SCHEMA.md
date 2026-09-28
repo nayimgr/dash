@@ -200,6 +200,13 @@ Comments and re-dates happen **before** closes, so a closing note is never lost
 to a later failure. A failure is recorded in `errors` and the entry stays
 unmarked, so a re-run picks it up.
 
+## Manifest switches worth knowing
+
+`compactCards: true` — an item card is one row: done, title, due chip ("Today"
+for today, "overdue · dd/mm", or dd/mm) and "⋯", which opens the topic, the
+deadline, the note and the other actions. `subtasks: false` hides the subtask
+button. Per block: `collapsed`, `count`, `undated`, `allowNew`.
+
 ## Two rules that hold the whole thing up
 
 **Only `📅 Reminder:` and `📅 Deadline:` are ever parsed or written.** Dates in
