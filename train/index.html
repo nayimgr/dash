@@ -29,6 +29,7 @@ DashCore.start({
   changesPath: "brief/today_changes.json",
   rebuild:     "build-brief.yml",   // dispatched when the brief is from yesterday
   dateField:   { default:"Do on", person:"Next contact" },
+  compactCards: true,               // done + title + date; the rest behind "⋯"
 
   blocks: [
     { kind:"session",   id:"session",  label:"Today" },
