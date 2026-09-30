@@ -44,7 +44,7 @@
 window.DashCore = (function(){
 
 const API   = "https://api.github.com";
-const BUILD = "20260928-1900";
+const BUILD = "20260930-1000";
 
 let M        = null;     // manifest
 let REPO     = "";

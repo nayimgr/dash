@@ -444,6 +444,9 @@
   .ses + .ses{margin-top:8px}
   .ex{display:block}
   .ex-top{display:flex;align-items:baseline;gap:8px}
+  /* A long prescription wraps inside the card instead of running out of it. */
+  .ex-top .ex-p{flex-shrink:1;min-width:0;text-align:right;overflow-wrap:anywhere;line-height:1.4}
+  .ex-top .ex-n{min-width:4.5em}
   .ex-last{margin-top:1px}
   .ex-why{font-size:10.5px;color:var(--text-3);margin-top:2px;line-height:1.4}
   .ex-flag{display:flex;gap:5px;align-items:flex-start;font-size:11px;color:var(--warning);margin-top:3px;line-height:1.4}
