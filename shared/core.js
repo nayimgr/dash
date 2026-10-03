@@ -44,7 +44,7 @@
 window.DashCore = (function(){
 
 const API   = "https://api.github.com";
-const BUILD = "20260930-1000";
+const BUILD = "20261003-1000";
 
 let M        = null;     // manifest
 let REPO     = "";
@@ -194,7 +194,7 @@ function loadLocal(){
 function saveLocal(){ lsSet(localKey(), JSON.stringify(S)); }
 
 // ── effective state: journal overlaid with local ─────────────────────────────
-const FIELDS = ["done","drop","log","reminder","deadline"];   // drop = won't do
+const FIELDS = ["done","drop","log","reminder","deadline","title"];   // drop = won't do
 function jch(n){ return (J && J.changes[String(n)]) || {}; }
 function lch(n){ return S.ch[String(n)] || {}; }
 // An entry the Action has already written to the issue. Its fields are now part
@@ -209,6 +209,7 @@ function isReflected(item){
   if(j.reminder && dateOf(j.reminder) !== (item.due || "")) return false;
   if(j.deadline && dateOf(j.deadline) !== (item.deadline || "")) return false;
   if(j.done || j.drop) return false;
+  if(j.title && j.title !== item.title) return false;
   const l = lch(item.number);
   return !FIELDS.some(f => f in l);           // nothing newer on this device
 }
@@ -896,8 +897,14 @@ async function doUpload(uid_){
 function toggleMore(n){ const cur = panels[n] || {}; panels[n] = Object.assign({}, cur, {more: !cur.more}); render(); }
 function toggleP(n,w){
   const cur = panels[n] || {};
-  panels[n] = {log:false, date:false, more:cur.more}; panels[n][w] = !cur[w];
+  panels[n] = {log:false, date:false, name:false, more:cur.more}; panels[n][w] = !cur[w];
   render();
+}
+// Same as the issue's title (or empty) = no change.
+function saveName(n){
+  const v = document.getElementById("nm-"+n).value.trim();
+  const it = (BRIEF.items || []).find(i => i.number === n) || {};
+  panels[n] = Object.assign({}, panels[n], {name:false}); setCh(n, {title: (v && v !== it.title) ? v : false});
 }
 function saveLog(n){
   const v = document.getElementById("lt-"+n).value.trim();
@@ -1056,7 +1063,7 @@ function card(item){
       // `undated` items (a reading list) are never given a date from here.
       + (isTask && !done && !item.undated && dd !== tomorrow() || l.reminder === tomorrow()
           ? "<button class='act chk tmrw"+(l.reminder===tomorrow()?" on":"")+"' onclick='DashCore.toTomorrow("+n+")' title='"+(l.reminder===tomorrow()?"Undo — back to "+esc(fd(item.due)||"no date"):"Move to tomorrow")+"'>"+IC.tmrw+"</button>" : "")
-      + "<span class='card-title"+(done?" struck":"")+"'>"+esc(item.title)+"</span>"
+      + "<span class='card-title"+(done?" struck":"")+"'>"+esc(c.title || item.title)+"</span>"
       + (dd ? dueChip(dd, tick) : "")
       + "<button class='act more"+(open?" on":"")+"' onclick='DashCore.toggleMore("+n+")' title='More'>"+IC.more+"</button></div>"
       + ((status || c.log || dropped) && !open ? "<div class='card-meta'>"+(dropped?"<span class='chip dropped'>won't do</span>":"")+(c.log?"<span class='chip logged'>"+IC.msg+" note</span>":"")+status+"</div>" : "")
@@ -1066,6 +1073,7 @@ function card(item){
           + (item.note?"<div class='cnote'>"+esc(item.note)+"</div>":"")
           + "<div class='acts'>"
           + "<button class='act"+(star?" on-star":"")+"' onclick='DashCore.toggleStar("+n+")' title='"+(star?"Unstar":"Star — what I'm on right now")+"'>"+(star?IC.starOn:IC.star)+"</button>"
+          + "<button class='act"+(p.name?" on":"")+(c.title&&!p.name?" on-green":"")+"' onclick='DashCore.toggleP("+n+",\"name\")' title='Rename'>"+IC.edit+"</button>"
           + "<button class='act"+(p.log?" on":"")+(c.log&&!p.log?" on-green":"")+"' onclick='DashCore.toggleP("+n+",\"log\")' title='Log a note'>"+IC.msg+"</button>"
           + "<button class='act"+(p.date?" on":"")+"' onclick='DashCore.toggleP("+n+",\"date\")' title='"+esc(dlabel)+"'>"+IC.cal+"</button>"
           + (item.link?"<a class='act' href='"+esc(item.link)+"' target='_blank' rel='noopener' title='Open link'>"+IC.link+"</a>":"")
@@ -1077,7 +1085,7 @@ function card(item){
   }
 
   return "<div class='card "+dcs+(done?" done":"")+(star?" starred":"")+(applied?" applied":"")+"'>"
-    + "<div class='card-row'><span class='card-title"+(done?" struck":"")+"'>"+esc(item.title)+"</span><div class='acts'>"
+    + "<div class='card-row'><span class='card-title"+(done?" struck":"")+"'>"+esc(c.title || item.title)+"</span><div class='acts'>"
     + "<button class='act"+(star?" on-star":"")+"' onclick='DashCore.toggleStar("+n+")' title='"+(star?"Unstar":"Star — what I'm on right now")+"'>"+(star?IC.starOn:IC.star)+"</button>"
     + (isTask?"<button class='act"+(done?" on-green":"")+"' onclick='DashCore.setCh("+n+",{done:"+(!done)+"})' title='"+(done?"Undo":"Done")+"'>"+IC.check+"</button>":"")
     + "<button class='act"+(p.log?" on":"")+(c.log&&!p.log?" on-green":"")+"' onclick='DashCore.toggleP("+n+",\"log\")' title='Log a note'>"+IC.msg+"</button>"
@@ -1098,7 +1106,11 @@ function card(item){
     + "</div>";
 }
 function panelsHtml(n, c, p, dd, ddl, dlabel){
-  return (p.log?"<div class='panel'><textarea id='lt-"+n+"' placeholder='Note…'>"+esc(c.log||"")+"</textarea>"
+  const it = (BRIEF.items || []).find(i => i.number === n) || {};
+  return (p.name?"<div class='panel'><input type='text' id='nm-"+n+"' value='"+esc(c.title || it.title || "")+"' onkeydown='if(event.key===\"Enter\")DashCore.saveName("+n+")'>"
+       + "<div class='pbtns'><button class='btn' onclick='DashCore.toggleP("+n+",\"name\")'>Cancel</button>"
+       + "<button class='btn btn-p' onclick='DashCore.saveName("+n+")'>Rename</button></div></div>":"")
+    + (p.log?"<div class='panel'><textarea id='lt-"+n+"' placeholder='Note…'>"+esc(c.log||"")+"</textarea>"
        + "<div class='pbtns'><button class='btn' onclick='DashCore.toggleP("+n+",\"log\")'>Cancel</button>"
        + "<button class='btn btn-p' onclick='DashCore.saveLog("+n+")'>Save</button></div></div>":"")
     + (p.date?"<div class='panel'><div class='grid' style='display:grid;grid-template-columns:1fr 1fr;gap:8px'>"
@@ -1851,7 +1863,7 @@ function start(manifest){
 }
 
 return {
-  start, loadBrief, reload, saveConfig, resetConfig, hmPick, wkMore, rebuild:function(){ rebuildStale(true); },
+  start, loadBrief, reload, saveConfig, resetConfig, saveName, hmPick, wkMore, rebuild:function(){ rebuildStale(true); },
   setCh, toggleP, saveLog, saveDate,
   addTask, rmTask, addSubtask, toggleSubForm, toggleNew:function(id){ showNF = (showNF === id) ? null : id;
     NFBLOCK = (M.blocks||[]).find(b => secId(b.id || b.label) === id) || null; render(); },
