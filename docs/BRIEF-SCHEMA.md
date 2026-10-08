@@ -67,7 +67,9 @@ Everything is optional except `date`. An empty block does not render.
   "reading": [
     { "id": "stable-id",           // the journal keys decisions on it
       "title": "…", "by": "…", "source": "…",
-      "alt": false,                // highlights the source chip
+      "date": "2026-01-14", "url": "…", "topic": "beta",
+      "field": "…",                // optional: groups the list under a heading
+      "carried": "2026-01-13",     // optional: shown before, not triaged — a "since" chip
       "date": "2026-01-14", "url": "…", "topic": "beta",
       "why": "What it changes for something that is live right now.",
       "summary": "Optional, collapsed behind 'more'." }

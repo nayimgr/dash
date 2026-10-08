@@ -44,7 +44,7 @@
 window.DashCore = (function(){
 
 const API   = "https://api.github.com";
-const BUILD = "20261003-1000";
+const BUILD = "20261009-0115";
 
 let M        = null;     // manifest
 let REPO     = "";
@@ -1205,6 +1205,7 @@ function readingBlock(x){
     + (x.source?"<span class='pp-src"+(x.alt?" alt":"")+"'>"+esc(x.source)+"</span>":"")
     + (x.date?"<span class='chip'>"+esc(String(x.date).slice(0,10).split("-").reverse().slice(0,2).join("/"))+"</span>":"")
     + ttag(x.topic)
+    + (x.carried?"<span class='chip' title='Shown before, not triaged yet'>since "+esc(String(x.carried).slice(0,10).split("-").reverse().slice(0,2).join("/"))+"</span>":"")
     + (task?"<span class='chip logged'>→ task</span>":"")
     + (kept?"<span class='chip logged'>reading list</span>":"")
     + (unsaved ? "<span class='chip unsaved'>unsaved</span>"
