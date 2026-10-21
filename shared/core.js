@@ -44,7 +44,7 @@
 window.DashCore = (function(){
 
 const API   = "https://api.github.com";
-const BUILD = "20261021-1100";
+const BUILD = "20261021-1300";
 
 let M        = null;     // manifest
 let REPO     = "";
@@ -406,6 +406,11 @@ function utf8b64(str){
   return btoa(bin);
 }
 
+// The dashboard's own commits are signed with an address no GitHub account owns,
+// so a day of ticking tasks doesn't fill the owner's contribution graph.
+// (The token still makes the push, so workflows trigger as before.)
+const COMMIT_AS = {name: "dash", email: "dash@example.com"};
+
 // ── load ─────────────────────────────────────────────────────────────────────
 async function fetchJournal(){
   try{
@@ -514,7 +519,8 @@ async function push(){
     const merged = mergeLocalInto(J);
     const body = {
       message: M.id + ": journal " + BRIEF.date,
-      content: utf8b64(JSON.stringify(merged, null, 2) + "\n")
+      content: utf8b64(JSON.stringify(merged, null, 2) + "\n"),
+      author: COMMIT_AS, committer: COMMIT_AS
     };
     if(J_SHA) body.sha = J_SHA;
     const res = await api("/repos/"+REPO+"/contents/"+M.changesPath, "PUT", body);
@@ -884,7 +890,8 @@ async function doUpload(uid_){
     let sha = null;
     try{ sha = (await api("/repos/"+REPO+"/contents/"+path+"?ref=HEAD&t="+Date.now())).sha; }
     catch(e){ if(String(e.message).indexOf("404") !== 0) throw e; }
-    const body = {message: M.id + ": upload " + path, content: utf8b64(text)};
+    const body = {message: M.id + ": upload " + path, content: utf8b64(text),
+                  author: COMMIT_AS, committer: COMMIT_AS};
     if(sha) body.sha = sha;
     await api("/repos/"+REPO+"/contents/"+path, "PUT", body);
     upState[uid_] = {ok:path};
