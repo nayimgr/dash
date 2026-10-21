@@ -44,7 +44,7 @@
 window.DashCore = (function(){
 
 const API   = "https://api.github.com";
-const BUILD = "20261009-0115";
+const BUILD = "20261021-1100";
 
 let M        = null;     // manifest
 let REPO     = "";
@@ -345,6 +345,7 @@ function setCh(n,p){
 // shows the new date, the card is simply where it belongs and is not hidden.
 function isSettled(item){ const c = eff(item.number); return !!(c.done || c.drop || (c.reminder && dateOf(c.reminder) !== (item.due || ""))); }
 function settledCount(){ return BRIEF ? (BRIEF.items||[]).filter(isSettled).length : 0; }
+function toggleRdShow(){ const c = panels["rd-show"] || {}; panels["rd-show"] = {open: !c.open}; render(); }
 function toggleHide(){
   hideSettled = !hideSettled;
   lsSet(K("hide"), hideSettled ? "1" : "0");
@@ -1580,7 +1581,10 @@ function renderBlock(b){
     const all  = readingItems();
     if(!all.length) return "";
     const decided = all.filter(x => !!effRead(String(x.id)));
-    const list    = hideSettled ? all.filter(x => !effRead(String(x.id))) : all;
+    // A triaged paper leaves the list at once, whatever the global "hide settled"
+    // switch says; "show" brings them back for this view only (to undo one).
+    const showRd  = !!(panels["rd-show"] || {}).open;
+    const list    = showRd ? all : all.filter(x => !effRead(String(x.id)));
     return section(L, function(){
       // Grouped under a small heading when the brief says which field each is in.
       let h = "", last = null;
@@ -1589,9 +1593,9 @@ function renderBlock(b){
         h += readingBlock(x);
       });
       if(!list.length) h += "<div class='rc-empty'>All triaged.</div>";
-      if(hideSettled && decided.length)
+      if(decided.length)
         h += "<div class='hidden-row'>"+decided.length+" triaged"
-           + " <button class='lnk' onclick='DashCore.toggleHide()'>show</button></div>";
+           + " <button class='lnk' onclick='DashCore.toggleRdShow()'>"+(showRd?"hide":"show")+"</button></div>";
       return h;
     }, {note: txt(b.id+".note", b.note)});
   }
@@ -1871,7 +1875,7 @@ return {
   toggleNtP, saveNtLog, saveNtDate, toggleStarNt, toggleNtDone,
   addBraindump, rmBraindump, toggleBDEdit, saveBDEdit, toggleBDExpand,
   dismissInbox, toggleIB, convertInbox,
-  keepRead, dismissRead, togglePP, toggleAbs, readToTask,
+  keepRead, dismissRead, toggleRdShow, togglePP, toggleAbs, readToTask,
   setReading, toggleCheck, pickForm:function(id){ if(FORMSEL) readForm(FORMSEL); FORMSEL = id; render(); }, pickChoice, readForm, addEntry, rmEntry, doUpload,
   toggleStar, toggleMore, toTomorrow, push, toggleHide, toggleSection, dismissWarn, closeModal
 };
