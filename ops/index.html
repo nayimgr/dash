@@ -12,13 +12,13 @@
 <link rel="icon" type="image/svg+xml" href="../icons/icon.svg">
 <link rel="icon" type="image/png" sizes="32x32" href="../icons/icon-32.png">
 <link rel="apple-touch-icon" href="../icons/icon-180.png">
-<link rel="stylesheet" href="../shared/style.css?v=20261021-1300">
+<link rel="stylesheet" href="../shared/style.css?v=20261111-1000">
 </head>
 <body>
 <div id="app"></div>
 <div class="overlay" id="overlay"><div class="modal" id="modal"></div></div>
 
-<script src="../shared/core.js?v=20261021-1300"></script>
+<script src="../shared/core.js?v=20261111-1000"></script>
 <script>
 // Structure only. Every label, topic, prompt and colour assignment comes from
 // the brief, which lives in a private repository — so this file says what the
@@ -32,7 +32,8 @@ DashCore.start({
   briefPath:   "brief/ops/today.json",
   changesPath: "brief/ops/today_changes.json",
   rebuild:     "build-brief.yml",   // dispatched when the brief is from yesterday
-  dateField:   { default:"Reminder", person:"Next contact" },
+  dateField:   { default:"Date", person:"Next contact" },
+  deadline:    false,               // one date per task; the 📅 Deadline line is ignored
   subtasks:    false,               // notes inside a task, not a hierarchy
   compactCards: true,               // done + title + date; the rest behind "⋯"
 
@@ -46,8 +47,7 @@ DashCore.start({
     { kind:"items",     id:"readlist", label:"List",     allowNew:true, undated:true, count:true },
     { kind:"items",     id:"someday",  label:"Later",    allowNew:true, undated:true, count:true, collapsed:true },
     { kind:"recent",    id:"recent",   label:"Recently done", limit:40 },
-    { kind:"inbox",     id:"inbox",    label:"Inbox" },
-    { kind:"braindump", id:"notes",    label:"Notes" }
+    { kind:"inbox",     id:"inbox",    label:"Inbox" }
   ]
 });
 </script>

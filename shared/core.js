@@ -102,6 +102,7 @@ const IC = {
   msg:`<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>`,
   cal:`<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>`,
   link:`<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>`,
+  tday:`<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="2.5" fill="currentColor"/></svg>`,
   tmrw:`<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><polyline points="13 17 18 12 13 7"/><polyline points="6 17 11 12 6 7"/></svg>`,
   more:`<svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><circle cx="5" cy="12" r="1.8"/><circle cx="12" cy="12" r="1.8"/><circle cx="19" cy="12" r="1.8"/></svg>`,
   ext:`<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>`,
@@ -160,6 +161,22 @@ function ttag(t){ if(!t) return ""; return "<span class='tag "+tclass(t)+"'>"+es
 // them. The manifest holds neutral fallbacks so the page still works before the
 // first brief exists.
 function topics(){ return (BRIEF && BRIEF.topics) || M.topics || []; }
+// The new-item dropdowns. The brief may narrow them to a few choices, each a
+// {topic, label} pair (`default:true` marks the one to fall back on); without
+// that, every topic is offered under its own name.
+function topicChoices(){
+  const c = BRIEF && BRIEF.topicChoices;
+  return (Array.isArray(c) && c.length) ? c.map(x => typeof x === "string" ? {topic:x, label:x} : x)
+                                        : topics().map(t => ({topic:t, label:t}));
+}
+function topicOptions(sel){
+  const ch = topicChoices();
+  if(!ch.some(x => x.topic === sel)) sel = (ch.find(x => x.default) || ch[0] || {}).topic;
+  return ch.map(x => "<option value='"+esc(x.topic)+"'"+(x.topic===sel?" selected":"")+">"+esc(x.label||x.topic)+"</option>").join("");
+}
+// One date or two: `deadline:false` in the manifest hides the second everywhere.
+function useDeadline(){ return M.deadline !== false; }
+function dlChip(d, tick){ return (d && useDeadline()) ? "<span class='chip dl "+dc(d)+"'>deadline "+fd(d)+(tick||"")+"</span>" : ""; }
 function txt(key, dflt){
   const t = (BRIEF && BRIEF.labels) || {};
   return (t[key] === undefined || t[key] === null) ? dflt : t[key];
@@ -343,7 +360,9 @@ function setCh(n,p){
 // ── settled / collapsed / dismissed ──────────────────────────────────────────
 // Done, or re-dated to somewhere the brief hasn't put it yet. Once the brief
 // shows the new date, the card is simply where it belongs and is not hidden.
-function isSettled(item){ const c = eff(item.number); return !!(c.done || c.drop || (c.reminder && dateOf(c.reminder) !== (item.due || ""))); }
+// Moved to today is the exception: it is today's work, so it stays in view.
+function isSettled(item){ const c = eff(item.number), r = dateOf(c.reminder);
+  return !!(c.done || c.drop || (c.reminder && r !== (item.due || "") && r !== TODAY)); }
 function settledCount(){ return BRIEF ? (BRIEF.items||[]).filter(isSettled).length : 0; }
 function toggleRdShow(){ const c = panels["rd-show"] || {}; panels["rd-show"] = {open: !c.open}; render(); }
 function toggleHide(){
@@ -617,7 +636,7 @@ function addTask(){
     title:    title,
     topic:    document.getElementById("nt-tp").value,
     due:      document.getElementById("nt-d").value  || null,
-    deadline: document.getElementById("nt-dl").value || null,
+    deadline: (document.getElementById("nt-dl")||{value:""}).value || null,
     note:     document.getElementById("nt-n").value.trim() || null,
     // Shown under the block it was added from until the brief places it.
     group:    NFBLOCK ? NFBLOCK.id : undefined
@@ -921,6 +940,11 @@ function saveLog(n){
 // The most common re-date: push to tomorrow (local), from wherever it was due.
 // Pressed again before Save, it undoes itself.
 function tomorrow(){ const d = new Date(); d.setDate(d.getDate() + 1); return localDate(d); }
+// Same, pulled forward to today (an overdue item, or one from Later).
+function toToday(n){
+  const l = lch(String(n));
+  setCh(n, {reminder: l.reminder === TODAY ? false : TODAY});
+}
 function toTomorrow(n){
   const t = tomorrow(), l = lch(String(n));
   setCh(n, {reminder: l.reminder === t ? false : t});
@@ -930,10 +954,10 @@ function toTomorrow(n){
 // value means "no change".
 function saveDate(n){
   const rv = document.getElementById("dt-"+n).value;
-  const dv = document.getElementById("dl-"+n).value;
+  const dle = document.getElementById("dl-"+n);
   const it = (BRIEF.items || []).find(i => i.number === n) || {};
   const pick = (v, cur) => v ? (v === cur ? false : v) : (cur ? "none" : false);
-  panels[n] = {}; setCh(n,{reminder: pick(rv, it.due || ""), deadline: pick(dv, it.deadline || "")});
+  panels[n] = {}; setCh(n,{reminder: pick(rv, it.due || ""), deadline: dle ? pick(dle.value, it.deadline || "") : false});
 }
 function dateOf(v, fallback){ return v === "none" ? "" : (v || fallback || ""); }
 
@@ -1069,6 +1093,8 @@ function card(item){
       + "<div class='card-row'>"
       + (isTask ? "<button class='act chk"+(c.done?" on-green":"")+"' onclick='DashCore.setCh("+n+",{done:"+(!done)+",drop:false})' title='"+(done?"Undo":"Done")+"'>"+IC.check+"</button>" : "")
       // `undated` items (a reading list) are never given a date from here.
+      + (isTask && !done && !item.undated && dd !== TODAY || l.reminder === TODAY
+          ? "<button class='act chk tmrw"+(l.reminder===TODAY?" on":"")+"' onclick='DashCore.toToday("+n+")' title='"+(l.reminder===TODAY?"Undo — back to "+esc(fd(item.due)||"no date"):"Move to today")+"'>"+IC.tday+"</button>" : "")
       + (isTask && !done && !item.undated && dd !== tomorrow() || l.reminder === tomorrow()
           ? "<button class='act chk tmrw"+(l.reminder===tomorrow()?" on":"")+"' onclick='DashCore.toTomorrow("+n+")' title='"+(l.reminder===tomorrow()?"Undo — back to "+esc(fd(item.due)||"no date"):"Move to tomorrow")+"'>"+IC.tmrw+"</button>" : "")
       + "<span class='card-title"+(done?" struck":"")+"'>"+esc(c.title || item.title)+"</span>"
@@ -1076,7 +1102,7 @@ function card(item){
       + "<button class='act more"+(open?" on":"")+"' onclick='DashCore.toggleMore("+n+")' title='More'>"+IC.more+"</button></div>"
       + ((status || c.log || dropped) && !open ? "<div class='card-meta'>"+(dropped?"<span class='chip dropped'>won't do</span>":"")+(c.log?"<span class='chip logged'>"+IC.msg+" note</span>":"")+status+"</div>" : "")
       + (open ? "<div class='more-panel'><div class='card-meta'>" + ttag(item.topic)
-          + (ddl?"<span class='chip dl "+dc(ddl)+"'>deadline "+fd(ddl)+(c.deadline && !reflected?" ✓":"")+"</span>":"")
+          + dlChip(ddl, c.deadline && !reflected ? " ✓" : "")
           + (c.log?"<span class='chip logged'>"+IC.msg+" note</span>":"") + status + "</div>"
           + (item.note?"<div class='cnote'>"+esc(item.note)+"</div>":"")
           + "<div class='acts'>"
@@ -1102,7 +1128,7 @@ function card(item){
     + (item.url?"<a class='act' href='"+esc(item.url)+"' target='_blank' rel='noopener' title='GitHub'>"+IC.ext+"</a>":"")
     + "</div></div><div class='card-meta'>" + ttag(item.topic)
     + (dd ? dueChip(dd, tick) : "")
-    + (ddl?"<span class='chip dl "+dc(ddl)+"'>deadline "+fd(ddl)+(c.deadline && !reflected?" ✓":"")+"</span>":"")
+    + dlChip(ddl, c.deadline && !reflected ? " ✓" : "")
     + (c.log?"<span class='chip logged'>"+IC.msg+" note</span>":"")
     + (unsaved ? "<span class='chip unsaved'>unsaved</span>"
                : applied ? "<span class='chip applied'>applied</span>"
@@ -1121,9 +1147,9 @@ function panelsHtml(n, c, p, dd, ddl, dlabel){
     + (p.log?"<div class='panel'><textarea id='lt-"+n+"' placeholder='Note…'>"+esc(c.log||"")+"</textarea>"
        + "<div class='pbtns'><button class='btn' onclick='DashCore.toggleP("+n+",\"log\")'>Cancel</button>"
        + "<button class='btn btn-p' onclick='DashCore.saveLog("+n+")'>Save</button></div></div>":"")
-    + (p.date?"<div class='panel'><div class='grid' style='display:grid;grid-template-columns:1fr 1fr;gap:8px'>"
+    + (p.date?"<div class='panel'><div class='grid' style='display:grid;grid-template-columns:"+(useDeadline()?"1fr 1fr":"1fr")+";gap:8px'>"
        + "<div class='field'><label>"+esc(dlabel)+"</label><input type='date' id='dt-"+n+"' value='"+(dd||"")+"'></div>"
-       + "<div class='field'><label>Deadline</label><input type='date' id='dl-"+n+"' value='"+(ddl||"")+"'></div></div>"
+       + (useDeadline() ? "<div class='field'><label>Deadline</label><input type='date' id='dl-"+n+"' value='"+(ddl||"")+"'></div>" : "") + "</div>"
        + "<div class='pbtns'><button class='btn' onclick='DashCore.toggleP("+n+",\"date\")'>Cancel</button>"
        + "<button class='btn btn-p' onclick='DashCore.saveDate("+n+")'>Set</button></div></div>":"");
 }
@@ -1137,13 +1163,13 @@ function newCard(t){
     + "<button class='act"+(star?" on-star":"")+"' onclick='DashCore.toggleStarNt(\""+esc(t.cid)+"\")' title='"+(star?"Unstar":"Star")+"'>"+(star?IC.starOn:IC.star)+"</button>"
     + (applied?"":"<button class='act"+(done?" on-green":"")+"' onclick='DashCore.toggleNtDone(\""+esc(t.cid)+"\")' title='"+(done?"Undo":"Done")+"'>"+IC.check+"</button>"
     + "<button class='act"+(p.log?" on":"")+(t.log&&!p.log?" on-green":"")+"' onclick='DashCore.toggleNtP(\""+esc(t.cid)+"\",\"log\")' title='Log'>"+IC.msg+"</button>"
-    + "<button class='act"+(p.date?" on":"")+"' onclick='DashCore.toggleNtP(\""+esc(t.cid)+"\",\"date\")' title='Reminder'>"+IC.cal+"</button>"
+    + "<button class='act"+(p.date?" on":"")+"' onclick='DashCore.toggleNtP(\""+esc(t.cid)+"\",\"date\")' title='"+esc(M.dateField.default)+"'>"+IC.cal+"</button>"
     + "<button class='act rm' onclick='DashCore.rmTask(\""+esc(t.cid)+"\")' title='Remove'>"+IC.x+"</button>")
     + (applied && t.applied.url ? "<a class='act' href='"+esc(t.applied.url)+"' target='_blank' rel='noopener' title='GitHub'>"+IC.ext+"</a>" : "")
     + "</div></div>"
     + "<div class='card-meta'>" + ttag(t.topic) + ""
     + (t.due?"<span class='chip "+dcs+"'>"+fd(t.due)+"</span>":"")
-    + (t.deadline?"<span class='chip dl "+dc(t.deadline)+"'>deadline "+fd(t.deadline)+"</span>":"")
+    + dlChip(t.deadline)
     + (t.log?"<span class='chip logged'>"+IC.msg+" note</span>":"")
     + (done&&!applied?"<span class='chip logged'>done — will create + close</span>":"")
     + (applied ? "<span class='chip applied'>created"+(t.applied.issue?" #"+t.applied.issue:"")+"</span>"
@@ -1153,9 +1179,9 @@ function newCard(t){
     + (p.log?"<div class='panel'><textarea id='nlt-"+esc(t.cid)+"' placeholder='Note…'>"+esc(t.log||"")+"</textarea>"
        + "<div class='pbtns'><button class='btn' onclick='DashCore.toggleNtP(\""+esc(t.cid)+"\",\"log\")'>Cancel</button>"
        + "<button class='btn btn-p' onclick='DashCore.saveNtLog(\""+esc(t.cid)+"\")'>Save</button></div></div>":"")
-    + (p.date?"<div class='panel'><div class='grid' style='display:grid;grid-template-columns:1fr 1fr;gap:8px'>"
-       + "<div class='field'><label>Reminder</label><input type='date' id='ndt-"+esc(t.cid)+"' value='"+(t.due||"")+"'></div>"
-       + "<div class='field'><label>Deadline</label><input type='date' id='ndl-"+esc(t.cid)+"' value='"+(t.deadline||"")+"'></div></div>"
+    + (p.date?"<div class='panel'><div class='grid' style='display:grid;grid-template-columns:"+(useDeadline()?"1fr 1fr":"1fr")+";gap:8px'>"
+       + "<div class='field'><label>"+esc(M.dateField.default)+"</label><input type='date' id='ndt-"+esc(t.cid)+"' value='"+(t.due||"")+"'></div>"
+       + (useDeadline() ? "<div class='field'><label>Deadline</label><input type='date' id='ndl-"+esc(t.cid)+"' value='"+(t.deadline||"")+"'></div>" : "") + "</div>"
        + "<div class='pbtns'><button class='btn' onclick='DashCore.toggleNtP(\""+esc(t.cid)+"\",\"date\")'>Cancel</button>"
        + "<button class='btn btn-p' onclick='DashCore.saveNtDate(\""+esc(t.cid)+"\")'>Set</button></div></div>":"")
     + "</div>";
@@ -1230,8 +1256,8 @@ function readingBlock(x){
         + "<div class='field'><label>Task title</label><input id='pp-t-"+esc(id)+"' type='text' value='"+esc("Read — "+x.title)+"'></div>"
         + "<div class='grid' style='display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:8px 0'>"
         + "<div class='field'><label>Topic</label><select id='pp-tp-"+esc(id)+"'>"
-        + (topics()).map(t=>"<option"+(t===(x.topic||"")?" selected":"")+">"+esc(t)+"</option>").join("")+"</select></div>"
-        + "<div class='field'><label>Reminder</label><input id='pp-d-"+esc(id)+"' type='date' value='"+TODAY+"'></div></div>"
+        + topicOptions(x.topic||"")+"</select></div>"
+        + "<div class='field'><label>"+esc(M.dateField.default)+"</label><input id='pp-d-"+esc(id)+"' type='date' value='"+TODAY+"'></div></div>"
         + "<p class='err' id='pp-err-"+esc(id)+"'></p>"
         + "<div class='pbtns'><button class='btn' onclick='DashCore.togglePP(\""+esc(id)+"\")'>Cancel</button>"
         + "<button class='btn btn-p' onclick='DashCore.readToTask(\""+esc(id)+"\")'>Create task</button></div></div>":"")
@@ -1549,11 +1575,19 @@ function renderBlock(b){
       if(b.allowNew && showNF === sid){
         h += "<div class='nform'>"
           + "<div class='field'><label>Title</label><input id='nt-t' type='text' placeholder='"+esc(txt(b.id+".new", b.placeholder)||"Title…")+"'></div>"
-          + "<div class='grid' style='grid-template-columns:1fr 1fr 1fr'>"
-          + "<div class='field'><label>Topic</label><select id='nt-tp'>"
-          + (topics()).map(t=>"<option"+(t===(b.defaultTopic||txt(b.id+".topic",""))?" selected":"")+">"+esc(t)+"</option>").join("")+"</select></div>"
-          + "<div class='field'><label>Reminder</label><input id='nt-d' type='date' value='"+(b.undated?"":TODAY)+"'></div>"
-          + "<div class='field'><label>Deadline</label><input id='nt-dl' type='date'></div></div>"
+          + (function(){
+              // A block whose own topic is not among the choices (a reading list)
+              // keeps it, without asking.
+              const dt = b.defaultTopic || txt(b.id+".topic","");
+              const fixed = dt && !topicChoices().some(x => x.topic === dt);
+              const cols = (fixed?0:1) + 1 + (useDeadline()?1:0);
+              return (fixed ? "<input type='hidden' id='nt-tp' value='"+esc(dt)+"'>" : "")
+                + "<div class='grid' style='grid-template-columns:"+Array(cols).fill("1fr").join(" ")+"'>"
+                + (fixed ? "" : "<div class='field'><label>Topic</label><select id='nt-tp'>"+topicOptions(dt)+"</select></div>")
+                + "<div class='field'><label>"+esc(M.dateField.default)+"</label><input id='nt-d' type='date' value='"+(b.undated?"":TODAY)+"'></div>"
+                + (useDeadline() ? "<div class='field'><label>Deadline</label><input id='nt-dl' type='date'></div>" : "")
+                + "</div>";
+            })()
           + "<div class='field'><label>Note (optional)</label><textarea id='nt-n' placeholder='Context…'></textarea></div>"
           + "<p class='err' id='nt-err'></p>"
           + "<div class='pbtns' style='margin-top:8px'><button class='btn' onclick='DashCore.toggleNew(\""+sid+"\")'>Cancel</button>"
@@ -1645,8 +1679,8 @@ function renderBlock(b){
               + "<div class='field'><label>Task title</label><input id='ib-t-"+esc(x.id)+"' type='text' value='"+esc(x.suggest||x.subject)+"'></div>"
               + "<div class='grid' style='display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:8px 0'>"
               + "<div class='field'><label>Topic</label><select id='ib-tp-"+esc(x.id)+"'>"
-              + (topics()).map(t=>"<option"+(t===(x.topic||"")?" selected":"")+">"+esc(t)+"</option>").join("")+"</select></div>"
-              + "<div class='field'><label>Reminder</label><input id='ib-d-"+esc(x.id)+"' type='date' value='"+esc(x.suggestDue||TODAY)+"'></div></div>"
+              + topicOptions(x.topic||"")+"</select></div>"
+              + "<div class='field'><label>"+esc(M.dateField.default)+"</label><input id='ib-d-"+esc(x.id)+"' type='date' value='"+esc(x.suggestDue||TODAY)+"'></div></div>"
               + "<div class='field'><label>Note (optional)</label><textarea id='ib-n-"+esc(x.id)+"'>"+esc(x.note||"")+"</textarea></div>"
               + "<p class='err' id='ib-err-"+esc(x.id)+"'></p>"
               + "<div class='pbtns'><button class='btn' onclick='DashCore.toggleIB(\""+esc(x.id)+"\")'>Cancel</button>"
@@ -1884,6 +1918,6 @@ return {
   dismissInbox, toggleIB, convertInbox,
   keepRead, dismissRead, toggleRdShow, togglePP, toggleAbs, readToTask,
   setReading, toggleCheck, pickForm:function(id){ if(FORMSEL) readForm(FORMSEL); FORMSEL = id; render(); }, pickChoice, readForm, addEntry, rmEntry, doUpload,
-  toggleStar, toggleMore, toTomorrow, push, toggleHide, toggleSection, dismissWarn, closeModal
+  toggleStar, toggleMore, toToday, toTomorrow, push, toggleHide, toggleSection, dismissWarn, closeModal
 };
 })();
