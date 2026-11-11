@@ -44,7 +44,7 @@
 window.DashCore = (function(){
 
 const API   = "https://api.github.com";
-const BUILD = "20261021-1300";
+const BUILD = "20261111-1200";
 
 let M        = null;     // manifest
 let REPO     = "";
@@ -102,6 +102,7 @@ const IC = {
   msg:`<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>`,
   cal:`<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>`,
   link:`<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>`,
+  grip:`<svg width="10" height="14" viewBox="0 0 10 14" fill="currentColor"><circle cx="3" cy="2.5" r="1.3"/><circle cx="7" cy="2.5" r="1.3"/><circle cx="3" cy="7" r="1.3"/><circle cx="7" cy="7" r="1.3"/><circle cx="3" cy="11.5" r="1.3"/><circle cx="7" cy="11.5" r="1.3"/></svg>`,
   tday:`<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="2.5" fill="currentColor"/></svg>`,
   tmrw:`<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><polyline points="13 17 18 12 13 7"/><polyline points="6 17 11 12 6 7"/></svg>`,
   more:`<svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><circle cx="5" cy="12" r="1.8"/><circle cx="12" cy="12" r="1.8"/><circle cx="19" cy="12" r="1.8"/></svg>`,
@@ -387,6 +388,128 @@ function secChev(id){
 }
 function secId(label){ return "sec-" + String(label).toLowerCase().replace(/[^a-z0-9]+/g,"-"); }
 
+// ── manual order ─────────────────────────────────────────────────────────────
+// Blocks marked `sortable` can be reordered by dragging a card's grip. The order
+// is a list of issue numbers per block, kept in its own file in the data
+// repository (`orderPath`), so every device shows the same one; written straight
+// away, not through the journal — it changes no issue. A card that is not in the
+// list keeps the place the brief gives it; the listed ones fill the remaining
+// slots in their saved order. Starred cards still go first.
+let ORDER     = {};      // {blockId: [issue numbers]}
+let ORDER_SHA = null;
+let ORDER_DIRTY = {};    // blocks reordered here and not yet written
+let ORDER_ERR = "";
+let orderT    = null;
+let dragging  = null;
+let renderPending = false;
+function orderPath(){ return M.orderPath; }
+async function fetchOrderFile(){
+  try{
+    const f = await api("/repos/"+REPO+"/contents/"+orderPath()+"?ref=HEAD&t="+Date.now());
+    return {sha:f.sha, order:(JSON.parse(b64utf8(f.content)).order || {})};
+  }catch(e){
+    if(String(e.message).indexOf("404") === 0) return {sha:null, order:{}};
+    throw e;
+  }
+}
+async function loadOrder(){
+  if(!orderPath()) return;
+  try{ ORDER = JSON.parse(ls(K("order"))) || {}; }catch(e){ ORDER = {}; }
+  try{
+    const f = await fetchOrderFile();
+    ORDER_SHA = f.sha;
+    // A reorder made here and not yet written wins over what the file says.
+    Object.keys(ORDER_DIRTY).forEach(function(b){ f.order[b] = ORDER[b]; });
+    ORDER = f.order;
+    lsSet(K("order"), JSON.stringify(ORDER));
+  }catch(e){ /* offline: the last copy on this device will do */ }
+}
+function applyOrder(list, id){
+  const rank = {};
+  (ORDER[id] || []).forEach(function(n, i){ rank[n] = i; });
+  const ranked = list.filter(i => i.number in rank).sort((a, b) => rank[a.number] - rank[b.number]);
+  let k = 0;
+  return list.map(i => (i.number in rank) ? ranked[k++] : i);
+}
+function setOrder(block, nums){
+  // Cards not on screen (hidden as handled) keep their entries, after the rest.
+  const rest = (ORDER[block] || []).filter(n => nums.indexOf(n) === -1);
+  ORDER[block] = nums.concat(rest);
+  ORDER_DIRTY[block] = true;
+  lsSet(K("order"), JSON.stringify(ORDER));
+  render();
+  clearTimeout(orderT);
+  orderT = setTimeout(saveOrder, 1200);
+}
+async function saveOrder(){
+  if(!orderPath() || !Object.keys(ORDER_DIRTY).length) return;
+  const blocks = Object.keys(ORDER_DIRTY);
+  const live = new Set((BRIEF ? BRIEF.items : []).map(i => i.number));
+  for(let attempt = 0; attempt < 3; attempt++){
+    try{
+      // Re-read, and replace only the blocks reordered here: another device's
+      // order for the other blocks is kept.
+      const f = await fetchOrderFile();
+      const merged = f.order;
+      blocks.forEach(function(b){ merged[b] = (ORDER[b] || []).filter(n => live.has(n)); });
+      const body = {
+        message: M.id + ": order",
+        content: utf8b64(JSON.stringify({updated: localStamp(), order: merged}, null, 2) + "\n"),
+        author: COMMIT_AS, committer: COMMIT_AS
+      };
+      if(f.sha) body.sha = f.sha;
+      const res = await api("/repos/"+REPO+"/contents/"+orderPath(), "PUT", body);
+      ORDER_SHA = res.content.sha;
+      blocks.forEach(function(b){ delete ORDER_DIRTY[b]; });
+      ORDER = merged; lsSet(K("order"), JSON.stringify(ORDER));
+      if(ORDER_ERR){ ORDER_ERR = ""; render(); }
+      return;
+    }catch(e){ ORDER_ERR = e.message || String(e); }
+  }
+  render();
+}
+// Pointer events rather than HTML drag-and-drop, which phones don't do.
+function dragStart(e, n){
+  if(e.button) return;
+  const grip = e.currentTarget, el = grip.closest(".card"), box = el && el.parentElement;
+  if(!box) return;
+  e.preventDefault();
+  const r = el.getBoundingClientRect();
+  const start = Array.from(box.querySelectorAll(":scope > .card[data-n]")).map(x => Number(x.getAttribute("data-n")));
+  const ph = document.createElement("div");
+  ph.className = "drag-ph"; ph.style.height = r.height + "px";
+  box.insertBefore(ph, el);
+  el.classList.add("dragging");
+  el.style.width = r.width + "px"; el.style.left = r.left + "px"; el.style.top = r.top + "px";
+  dragging = {n:n, el:el, box:box, ph:ph, dy:e.clientY - r.top, block:el.getAttribute("data-block"), start:start};
+  document.body.classList.add("dragging-on");
+  try{ grip.setPointerCapture(e.pointerId); }catch(x){}
+  grip.onpointermove = dragMove;
+  grip.onpointerup = grip.onpointercancel = dragEnd;
+}
+function dragMove(e){
+  const d = dragging; if(!d) return;
+  d.el.style.top = (e.clientY - d.dy) + "px";
+  const sibs = Array.from(d.box.querySelectorAll(":scope > .card[data-n]")).filter(x => x !== d.el);
+  const before = sibs.find(function(x){ const r = x.getBoundingClientRect(); return e.clientY < r.top + r.height/2; });
+  if(before) d.box.insertBefore(d.ph, before);
+  else if(sibs.length) sibs[sibs.length-1].after(d.ph);
+  if(e.clientY < 50) window.scrollBy(0, -10);
+  else if(e.clientY > window.innerHeight - 50) window.scrollBy(0, 10);
+}
+function dragEnd(e){
+  const d = dragging; if(!d) return;
+  e.currentTarget.onpointermove = e.currentTarget.onpointerup = e.currentTarget.onpointercancel = null;
+  d.box.insertBefore(d.el, d.ph); d.ph.remove();
+  d.el.classList.remove("dragging"); d.el.style.width = d.el.style.left = d.el.style.top = "";
+  const nums = Array.from(d.box.querySelectorAll(":scope > .card[data-n]")).map(x => Number(x.getAttribute("data-n")));
+  dragging = null;
+  document.body.classList.remove("dragging-on");
+  if(nums.join(",") === d.start.join(",")){ if(renderPending){ renderPending = false; render(); } return; }
+  renderPending = false;
+  setOrder(d.block, nums);
+}
+
 // ── GitHub API ───────────────────────────────────────────────────────────────
 async function api(path, method, body){
   const h = {
@@ -464,6 +587,7 @@ async function loadBrief(){
     BRIEF.meta     = BRIEF.meta     || {};
     BRIEF.meta.warnings = BRIEF.meta.warnings || [];
     await fetchJournal();
+    await loadOrder();
     loadLocal(); loadStars(); loadColl(); loadWdism();
     lastLoad = new Date();
     document.title = txt("title", M.title);
@@ -1012,7 +1136,7 @@ function renderModal(){
 /* ─── rendering ───────────────────────────────────────────────────────────── */
 
 // ── an issue card ────────────────────────────────────────────────────────────
-function card(item){
+function card(item, block){
   const n = item.number, c = eff(n), l = lch(n), p = panels[n] || {};
   const dropped = !!c.drop;
   const dd = dateOf(c.reminder, item.reminder || item.due), dcs = dc(dd), done = !!c.done || dropped;
@@ -1086,11 +1210,14 @@ function card(item){
                : reflected ? ""
                : (Object.keys(c).length ? "<span class='chip queued'>queued</span>" : "");
   const tick = (c.reminder && !reflected) ? " ✓" : "";
+  // In a sortable block: a grip to drag by, and what the drop needs to know.
+  const sortAttr = block ? " data-n='"+n+"' data-block='"+esc(block)+"'" : "";
+  const grip = block ? "<span class='grip' onpointerdown='DashCore.dragStart(event,"+n+")' title='Drag to reorder'>"+IC.grip+"</span>" : "";
   if(M.compactCards){
     // Compact: done + title + due chip; everything else behind "⋯".
     const open = !!p.more;
-    return "<div class='card compact "+dcs+(done?" done":"")+(star?" starred":"")+(applied?" applied":"")+"'>"
-      + "<div class='card-row'>"
+    return "<div class='card compact "+dcs+(done?" done":"")+(star?" starred":"")+(applied?" applied":"")+"'"+sortAttr+">"
+      + "<div class='card-row'>" + grip
       + (isTask ? "<button class='act chk"+(c.done?" on-green":"")+"' onclick='DashCore.setCh("+n+",{done:"+(!done)+",drop:false})' title='"+(done?"Undo":"Done")+"'>"+IC.check+"</button>" : "")
       // `undated` items (a reading list) are never given a date from here.
       + (isTask && !done && !item.undated && dd !== TODAY || l.reminder === TODAY
@@ -1118,8 +1245,8 @@ function card(item){
       + "</div>";
   }
 
-  return "<div class='card "+dcs+(done?" done":"")+(star?" starred":"")+(applied?" applied":"")+"'>"
-    + "<div class='card-row'><span class='card-title"+(done?" struck":"")+"'>"+esc(c.title || item.title)+"</span><div class='acts'>"
+  return "<div class='card "+dcs+(done?" done":"")+(star?" starred":"")+(applied?" applied":"")+"'"+sortAttr+">"
+    + "<div class='card-row'>" + grip + "<span class='card-title"+(done?" struck":"")+"'>"+esc(c.title || item.title)+"</span><div class='acts'>"
     + "<button class='act"+(star?" on-star":"")+"' onclick='DashCore.toggleStar("+n+")' title='"+(star?"Unstar":"Star — what I'm on right now")+"'>"+(star?IC.starOn:IC.star)+"</button>"
     + (isTask?"<button class='act"+(done?" on-green":"")+"' onclick='DashCore.setCh("+n+",{done:"+(!done)+"})' title='"+(done?"Undo":"Done")+"'>"+IC.check+"</button>":"")
     + "<button class='act"+(p.log?" on":"")+(c.log&&!p.log?" on-green":"")+"' onclick='DashCore.toggleP("+n+",\"log\")' title='Log a note'>"+IC.msg+"</button>"
@@ -1562,6 +1689,7 @@ function renderBlock(b){
     const all    = items.filter(itemPicker(b));
     const hidden = hideSettled ? all.filter(isSettled) : [];
     let   list   = hideSettled ? all.filter(i => !isSettled(i)) : all;
+    if(b.sortable) list = applyOrder(list, b.id);
     // starred first, original order preserved within each group
     list = list.filter(i => isStarred(i.number)).concat(list.filter(i => !isStarred(i.number)));
     const created = b.allowNew ? effCreated().filter(t => !t.parent && newPicker(b)(t)) : [];
@@ -1595,7 +1723,7 @@ function renderBlock(b){
       }
       // A task added here but not yet an issue sits where its date puts it,
       // not at the end: before the first card due later than it.
-      const rows = list.map(i => ({due: dateOf(eff(i.number).reminder, i.due) || "9999", html: card(i)}));
+      const rows = list.map(i => ({due: dateOf(eff(i.number).reminder, i.due) || "9999", html: card(i, b.sortable ? b.id : null)}));
       created.forEach(function(t){
         const due = t.due || "9999";
         const at = rows.findIndex(r => r.due > due);
@@ -1775,6 +1903,8 @@ function renderBlock(b){
 
 // ── the page ─────────────────────────────────────────────────────────────────
 function render(){
+  // Redrawing mid-drag would drop the card being moved; draw once it lands.
+  if(dragging){ renderPending = true; return; }
   const app = document.getElementById("app");
 
   if(view === "setup"){
@@ -1860,10 +1990,10 @@ function render(){
   // Summary and calendar sit above the columns: they are the "what is today"
   // answer, and pushing them into a column buries them on a wide screen.
   h += "<div class='topgrid'>";
-  if(meta.summary){
+  if(meta.summary && M.summary !== false){
     h += section("Brief", () => "<div class='summary'>"+esc(meta.summary)+"</div>");
   }
-  if(cal.length){
+  if(cal.length && M.calendar !== false){
     h += section("Today", () => calendarBlock(cal));
   }
   h += "</div>";
@@ -1876,7 +2006,8 @@ function render(){
      + " · <span class='build'>build "+BUILD+"</span>"
      + (nQueued?" · "+nQueued+" queued":"")
      + (nApplied?" · "+nApplied+" applied":"")
-     + (nLocal?" · "+nLocal+" unsaved":"") + "</span>"
+     + (nLocal?" · "+nLocal+" unsaved":"")
+     + (ORDER_ERR ? " · <span class='err' title='"+esc(ORDER_ERR)+"'>order not synced</span>" : "") + "</span>"
      + "<button class='lnk' onclick='DashCore.resetConfig()'>change repository/token</button></div></div>";
 
   app.innerHTML = h;
@@ -1918,6 +2049,6 @@ return {
   dismissInbox, toggleIB, convertInbox,
   keepRead, dismissRead, toggleRdShow, togglePP, toggleAbs, readToTask,
   setReading, toggleCheck, pickForm:function(id){ if(FORMSEL) readForm(FORMSEL); FORMSEL = id; render(); }, pickChoice, readForm, addEntry, rmEntry, doUpload,
-  toggleStar, toggleMore, toToday, toTomorrow, push, toggleHide, toggleSection, dismissWarn, closeModal
+  toggleStar, toggleMore, dragStart, toToday, toTomorrow, push, toggleHide, toggleSection, dismissWarn, closeModal
 };
 })();
